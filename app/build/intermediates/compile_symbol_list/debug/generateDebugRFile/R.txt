@@ -1,0 +1,6 @@
+int color ic_launcher_background 0x0
+int mipmap ic_launcher 0x0
+int mipmap ic_launcher_foreground 0x0
+int mipmap ic_launcher_monochrome 0x0
+int mipmap ic_launcher_round 0x0
+int style Theme_SaftSSH 0x0

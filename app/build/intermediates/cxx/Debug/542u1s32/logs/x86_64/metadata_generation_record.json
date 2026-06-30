@@ -1,0 +1,17 @@
+[
+{
+  "message": "Start JSON generation. Platform version: 26 min SDK version: x86_64",
+  "file": "C:\\Users\\Alessandro\\AndroidStudioProjects\\linux-plugin\\app\\src\\main\\cpp\\CMakeLists.txt",
+  "tag": "debug|x86_64"
+},
+{
+  "message": "JSON \u0027C:\\Users\\Alessandro\\AndroidStudioProjects\\linux-plugin\\app\\.cxx\\Debug\\542u1s32\\x86_64\\android_gradle_build.json\u0027 was up-to-date",
+  "file": "C:\\Users\\Alessandro\\AndroidStudioProjects\\linux-plugin\\app\\src\\main\\cpp\\CMakeLists.txt",
+  "tag": "debug|x86_64"
+},
+{
+  "message": "JSON generation completed without problems",
+  "file": "C:\\Users\\Alessandro\\AndroidStudioProjects\\linux-plugin\\app\\src\\main\\cpp\\CMakeLists.txt",
+  "tag": "debug|x86_64"
+}
+]

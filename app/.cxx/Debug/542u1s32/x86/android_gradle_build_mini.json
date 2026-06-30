@@ -1,0 +1,27 @@
+{
+  "buildFiles": [
+    "C:\\Users\\Alessandro\\AndroidStudioProjects\\linux-plugin\\app\\src\\main\\cpp\\CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "C:\\Users\\Alessandro\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+      "-C",
+      "C:\\Users\\Alessandro\\AndroidStudioProjects\\linux-plugin\\app\\.cxx\\Debug\\542u1s32\\x86",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "C:\\Users\\Alessandro\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+    "-C",
+    "C:\\Users\\Alessandro\\AndroidStudioProjects\\linux-plugin\\app\\.cxx\\Debug\\542u1s32\\x86",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "ptylauncher::@6890427a1f51a3e7e1df": {
+      "artifactName": "ptylauncher",
+      "abi": "x86",
+      "output": "C:\\Users\\Alessandro\\AndroidStudioProjects\\linux-plugin\\app\\build\\intermediates\\cxx\\Debug\\542u1s32\\obj\\x86\\libptylauncher.so",
+      "runtimeFiles": []
+    }
+  }
+}

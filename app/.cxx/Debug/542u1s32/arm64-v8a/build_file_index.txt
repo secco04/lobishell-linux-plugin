@@ -1,0 +1,1 @@
+C:\Users\Alessandro\AndroidStudioProjects\saftssh\linux-plugin\app\src\main\cpp\CMakeLists.txt

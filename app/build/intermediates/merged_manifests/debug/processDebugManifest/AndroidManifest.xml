@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="de.lobianco.saftssh.linux"
+    android:versionCode="1"
+    android:versionName="1.0" >
+
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="37" />
+
+    <!--
+         Only used by the optional bootstrap downloader (BootstrapInstaller). If you bundle the
+         bootstrap zip in assets/ instead, this can be removed.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+        Permission that the main LobiShell app holds and is checked on service bind.
+
+        protectionLevel="normal" is intentional: both apps may be signed with different keys
+        (plugin is distributed separately / open-source, main app is closed-source commercial).
+        Using "signature" would require identical signing keys, breaking cross-signed installs.
+        The service itself is restricted to apps that explicitly hold this permission AND declare
+        it in their manifest — combined with the exported="true" + permission attribute on the
+        <service> element this is the correct approach for cross-app IPC without shared signing.
+    -->
+    <permission
+        android:name="de.lobianco.saftssh.linux.READ_BINARY"
+        android:protectionLevel="normal" />
+    <permission
+        android:name="de.lobianco.saftssh.linux.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        android:protectionLevel="signature" />
+
+    <uses-permission android:name="de.lobianco.saftssh.linux.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+
+    <application
+        android:allowBackup="false"
+        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+        android:debuggable="true"
+        android:extractNativeLibs="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="LobiShell Linux Plugin"
+        android:supportsRtl="true"
+        android:testOnly="true" >
+
+        <!--
+            Minimal launcher activity so the APK is launchable and Play Store-acceptable.
+            Users who open this from the launcher see an informational screen; there is nothing
+            to configure here — the plugin works entirely as a bound service.
+        -->
+        <activity
+            android:name="de.lobianco.saftssh.linux.InfoActivity"
+            android:exported="true" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            The PTY session service. Only apps that hold READ_BINARY may bind.
+            The main LobiShell app requests this permission in its manifest.
+        -->
+        <service
+            android:name="de.lobianco.saftssh.linux.LinuxSessionService"
+            android:exported="true"
+            android:permission="de.lobianco.saftssh.linux.READ_BINARY" >
+            <intent-filter>
+                <action android:name="de.lobianco.saftssh.linux.BIND_SESSION_SERVICE" />
+            </intent-filter>
+        </service>
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="de.lobianco.saftssh.linux.androidx-startup"
+            android:exported="false" >
+            <meta-data
+                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                android:value="androidx.startup" />
+            <meta-data
+                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+                android:value="androidx.startup" />
+            <meta-data
+                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+                android:value="androidx.startup" />
+        </provider>
+
+        <receiver
+            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+            android:directBootAware="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.DUMP" >
+            <intent-filter>
+                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

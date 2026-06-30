@@ -1,0 +1,90 @@
+[
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-hdpi_ic_launcher_round.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-hdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-xxhdpi_ic_launcher_foreground.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-xxhdpi/ic_launcher_foreground.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-xxxhdpi_ic_launcher_monochrome.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-xxxhdpi/ic_launcher_monochrome.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-mdpi_ic_launcher_foreground.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-mdpi/ic_launcher_foreground.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-xxhdpi_ic_launcher_round.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-xxhdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-xxxhdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-xhdpi_ic_launcher_foreground.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-xhdpi/ic_launcher_foreground.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-mdpi_ic_launcher_monochrome.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-mdpi/ic_launcher_monochrome.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-xhdpi_ic_launcher_monochrome.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-xhdpi/ic_launcher_monochrome.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-xxxhdpi_ic_launcher_foreground.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-xxxhdpi/ic_launcher_foreground.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-mdpi_ic_launcher.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-mdpi/ic_launcher.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-hdpi_ic_launcher.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-hdpi/ic_launcher.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-hdpi_ic_launcher_monochrome.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-hdpi/ic_launcher_monochrome.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-mdpi_ic_launcher_round.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-mdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-xxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-xxxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-hdpi_ic_launcher_foreground.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-hdpi/ic_launcher_foreground.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-xxhdpi_ic_launcher_monochrome.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-xxhdpi/ic_launcher_monochrome.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-xhdpi_ic_launcher_round.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-xhdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "de.lobianco.saftssh.linux.app-debug-24:/mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "de.lobianco.saftssh.linux.app-main-26:/mipmap-xhdpi/ic_launcher.png"
+    }
+]

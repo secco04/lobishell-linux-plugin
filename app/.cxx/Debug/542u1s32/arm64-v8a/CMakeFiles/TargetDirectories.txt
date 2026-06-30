@@ -1,0 +1,3 @@
+C:/Users/Alessandro/AndroidStudioProjects/saftssh/linux-plugin/app/.cxx/Debug/542u1s32/arm64-v8a/CMakeFiles/ptylauncher.dir
+C:/Users/Alessandro/AndroidStudioProjects/saftssh/linux-plugin/app/.cxx/Debug/542u1s32/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/Users/Alessandro/AndroidStudioProjects/saftssh/linux-plugin/app/.cxx/Debug/542u1s32/arm64-v8a/CMakeFiles/rebuild_cache.dir
