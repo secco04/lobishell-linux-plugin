@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base app theme (no action bar — Compose handles the UI) -->
+    <style name="Theme.SaftSSH" parent="Theme.AppCompat.NoActionBar" />
+
+    <!--
+        Splash screen theme — set on MainActivity in AndroidManifest so the system
+        shows it during the cold-start black-screen window.
+        postSplashScreenTheme hands control back to Theme.SaftSSH once the first
+        Compose frame is ready.
+    -->
+
+</resources>

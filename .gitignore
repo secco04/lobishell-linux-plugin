@@ -1,0 +1,63 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+release/
+
+# Gradle files
+.gradle/
+build/
+
+# Kotlin compiler daemon cache
+.kotlin/
+
+# Local configuration file (SDK path, etc)
+local.properties
+
+# Log/HPROF Files
+*.log
+*.hprof
+
+# Android Studio
+.idea/
+*.iml
+.navigation/
+captures/
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+
+# Keystore files — NEVER commit!
+*.jks
+*.keystore
+
+# External native build
+.externalNativeBuild/
+.cxx/
+
+# Google Services
+google-services.json
+
+# Generated
+**/generated/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code local files (AI assistant metadata)
+.claude/

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Needed by RootfsInstaller to download the Ubuntu rootfs on first connect, and by apt
+         (run inside proot) to install packages afterwards. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Needed to keep the PTY session alive while both apps are backgrounded (see
+         LinuxSessionService.startForeground) — without this the OS kills the plugin's process
+         under memory pressure and the shell dies with no warning ("Linux exited"). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+        Permission that the main LobiShell app holds and is checked on service bind.
+
+        protectionLevel="normal" is intentional: both apps may be signed with different keys
+        (plugin is distributed separately / open-source, main app is closed-source commercial).
+        Using "signature" would require identical signing keys, breaking cross-signed installs.
+        The service itself is restricted to apps that explicitly hold this permission AND declare
+        it in their manifest — combined with the exported="true" + permission attribute on the
+        <service> element this is the correct approach for cross-app IPC without shared signing.
+    -->
+    <permission
+        android:name="de.lobianco.saftssh.linux.READ_BINARY"
+        android:protectionLevel="normal" />
+
+    <application
+        android:label="LobiShell Linux Plugin"
+        android:allowBackup="false"
+        android:supportsRtl="true"
+        android:icon="@mipmap/ic_launcher"
+        >
+
+        <!--
+            Minimal launcher activity so the APK is launchable and Play Store-acceptable.
+            Users who open this from the launcher see an informational screen; there is nothing
+            to configure here — the plugin works entirely as a bound service.
+        -->
+        <activity
+            android:name=".InfoActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            The PTY session service. Only apps that hold READ_BINARY may bind.
+            The main LobiShell app requests this permission in its manifest.
+        -->
+        <service
+            android:name=".LinuxSessionService"
+            android:exported="true"
+            android:permission="de.lobianco.saftssh.linux.READ_BINARY"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps a user-started Linux terminal session (proot) alive while backgrounded" />
+            <intent-filter>
+                <action android:name="de.lobianco.saftssh.linux.BIND_SESSION_SERVICE" />
+            </intent-filter>
+        </service>
+
+    </application>
+
+</manifest>
