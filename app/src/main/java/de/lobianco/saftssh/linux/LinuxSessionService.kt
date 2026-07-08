@@ -38,6 +38,11 @@ class LinuxSessionService : Service() {
     private val sshdSessions: MutableMap<String, SessionImpl> =
         Collections.synchronizedMap(mutableMapOf())
 
+    /** userlandId -> the persistent runit supervisor (`runsvdir /etc/service`) running in it, if
+     *  any. Same independent-proot-invocation pattern as [sshdSessions]. */
+    private val runitSessions: MutableMap<String, SessionImpl> =
+        Collections.synchronizedMap(mutableMapOf())
+
     override fun onBind(intent: Intent?): IBinder = serviceStub
 
     override fun onDestroy() {
@@ -145,6 +150,18 @@ class LinuxSessionService : Service() {
 
         override fun isSshdRunning(userlandId: String?): Boolean =
             sshdSessions.containsKey(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+
+        override fun startRunitSupervisor(userlandId: String?): Boolean =
+            this@LinuxSessionService.startRunitSupervisorInternal(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+
+        override fun stopRunitSupervisor(userlandId: String?): Boolean =
+            this@LinuxSessionService.stopRunitSupervisorInternal(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+
+        override fun isRunitSupervisorRunning(userlandId: String?): Boolean =
+            runitSessions.containsKey(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+
+        override fun isDeviceRooted(): Boolean =
+            RootDetector.isDeviceRooted(this@LinuxSessionService)
     }
 
     // ── Persistent sshd (independent of any interactive session) ───────────
@@ -312,6 +329,102 @@ class LinuxSessionService : Service() {
         return true
     }
 
+    // ── Persistent runit supervisor — the no-root "systemd/Docker need an init" answer ─────
+    // runit gives us the one thing no-root userlands actually miss: a supervisor that starts and
+    // respawns arbitrary services under /etc/service/<name>/run. It does NOT give real container
+    // isolation (no cgroups/namespaces — proot can't provide those without root), so this is not a
+    // Docker replacement, just an init replacement for daemons that expect one to exist.
+
+    /** Same shape as [buildSshdSetupScript]: installs runit on first use (idempotent), makes sure
+     *  the service directory exists, then execs into runsvdir so its PID persists as the
+     *  supervisor for the session's whole lifetime. */
+    private fun buildRunitSetupScript(): String =
+        "exec >/tmp/lobishell-runit-setup.log 2>&1; " +
+        "mkdir -p /etc/service && " +
+        "{ [ -x /usr/bin/runsvdir ] || (apt-get update && " +
+        "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 " +
+        "apt-get install -y -o Dpkg::Use-Pty=0 runit); } && " +
+        "exec runsvdir /etc/service"
+
+    /** Starts (idempotent) the runit supervisor for [userlandId], as its OWN proot invocation —
+     *  identical independent-lifecycle pattern as [startSshdInternal]: starting/stopping it never
+     *  touches a concurrently open interactive tab, or sshd, on the same userland. */
+    private fun startRunitSupervisorInternal(userlandId: String): Boolean {
+        runitSessions[userlandId]?.let { existing ->
+            val alive = try {
+                android.system.Os.kill(existing.pidValue, 0)
+                true
+            } catch (e: android.system.ErrnoException) {
+                false
+            }
+            if (alive) return true
+            Log.w(TAG, "startRunitSupervisor[$userlandId]: stale session, clearing")
+            runitSessions.remove(userlandId)
+            openSessions.remove(existing)
+            demoteFromForegroundIfIdle()
+        }
+        if (!RootfsInstaller.isInstalled(this, userlandId)) {
+            Log.w(TAG, "startRunitSupervisor[$userlandId]: rootfs not installed yet")
+            return false
+        }
+        return try {
+            val hostPageSize = android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE)
+            if (hostPageSize > 4096) {
+                Log.w(TAG, "startRunitSupervisor[$userlandId]: host uses ${hostPageSize / 1024} KB pages — proot/Ubuntu unsupported here")
+                return false
+            }
+            RootfsInstaller.configureRootfs(this, userlandId)
+            val rootfs = RootfsInstaller.rootfsDir(this, userlandId).absolutePath
+            val tmp    = RootfsInstaller.tmpDir(this, userlandId).apply { mkdirs() }.absolutePath
+            val libDir = File(filesDir, "usr/lib").absolutePath
+            val nativeLib = applicationInfo.nativeLibraryDir
+            val prootBin = "$nativeLib/libproot.so"
+            val loader   = "$nativeLib/libproot-loader.so"
+
+            val script = buildRunitSetupScript()
+            val args = arrayOf(
+                "proot",
+                "--kill-on-exit",
+                "--root-id",
+                "--link2symlink",
+                "-r", rootfs,
+                "-b", "/dev",
+                "-b", "/proc",
+                "-b", "/sys",
+                "-b", "$tmp:/tmp",
+                "-w", "/root",
+                "/usr/bin/env", "-i",
+                "HOME=/root",
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "TERM=xterm-256color",
+                "LANG=C.UTF-8",
+                "/bin/bash", "-c", script,
+            )
+            val env = arrayOf(
+                "PROOT_TMP_DIR=$tmp",
+                "PROOT_LOADER=$loader",
+                "LD_LIBRARY_PATH=$libDir:$nativeLib",
+            )
+            val result = PtyLauncher.forkAndExec(prootBin, args, env, 80, 24, "") ?: return false
+            val session = SessionImpl(result[0], result[1])
+            runitSessions[userlandId] = session
+            openSessions.add(session)
+            promoteToForeground()
+            Log.i(TAG, "startRunitSupervisor[$userlandId]: pid=${session.pidValue}")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "startRunitSupervisor[$userlandId] failed", e)
+            false
+        }
+    }
+
+    private fun stopRunitSupervisorInternal(userlandId: String): Boolean {
+        val session = runitSessions.remove(userlandId) ?: return false
+        session.destroy()
+        Log.i(TAG, "stopRunitSupervisor[$userlandId]: stopped")
+        return true
+    }
+
     // ── Session factory ────────────────────────────────────────────────────
 
     private fun buildSession(cols: Int, rows: Int, cwd: String?, userlandId: String, progress: (String) -> Unit): SessionImpl {
@@ -355,14 +468,14 @@ class LinuxSessionService : Service() {
             // On the very first launch, offer to install a curated set of everyday packages (the
             // marker /etc/.lobishell_setup is created afterwards so we only ask once). $ans is a
             // shell var (escaped); $pkgs is substituted by Kotlin.
-            // openssh-server is included here so it's already installed by the time anyone ever
-            // flips the "Remote SSH access" toggle — startSshdInternal()'s own on-demand
-            // `apt-get install` then just short-circuits on `[ -x /usr/sbin/sshd ]` instead of
-            // needing a full network install at toggle-time (which is where the earlier
-            // needrestart-hang bug bit hardest).
+            // openssh-server and runit are included here so they're already installed by the time
+            // anyone flips "Remote SSH access" or starts the service supervisor — the on-demand
+            // `apt-get install` in startSshdInternal()/startRunitSupervisorInternal() then just
+            // short-circuits on the `[ -x ... ]` check instead of needing a full network install at
+            // toggle-time (which is where the earlier needrestart-hang bug bit hardest).
             val pkgs = "curl wget ca-certificates git python3 python3-pip nano vim less htop " +
                 "unzip zip iputils-ping iproute2 net-tools dnsutils openssh-client openssh-server " +
-                "gnupg sudo file tree"
+                "gnupg sudo file tree runit"
             val firstRun =
                 "if [ ! -e /etc/.lobishell_setup ]; then " +
                 "printf '\\n\\033[1mInstall recommended packages?\\033[0m\\n(%s)\\n[Y/n] ' '$pkgs'; " +

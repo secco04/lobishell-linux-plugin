@@ -12,8 +12,8 @@ android {
         applicationId = "de.lobianco.saftssh.linux"
         minSdk = 26
         targetSdk = 37
-        versionCode =  6
-        versionName = "1.6 "
+        versionCode =  7
+        versionName = "1.7 "
 
         externalNativeBuild {
             cmake {
@@ -39,7 +39,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

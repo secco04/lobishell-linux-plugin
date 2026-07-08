@@ -35,4 +35,27 @@ interface ILinuxSessionService {
 
     /** True if a persistent SSH server is currently running for userland [userlandId]. */
     boolean isSshdRunning(String userlandId);
+
+    /**
+     * Starts (or no-ops if already running) the runit service supervisor (`runsvdir /etc/service`)
+     * for userland [userlandId], independent of any interactive createSession() PTY — same
+     * own-proot-invocation pattern as [startSshd]. Once running, any service directory the user
+     * creates under /etc/service/<name>/run (a plain executable script ending in `exec <daemon>`)
+     * is auto-supervised: started, and restarted if it dies. No-root: this only works within
+     * proot's own process/mount view, not real Linux namespaces or cgroups.
+     */
+    boolean startRunitSupervisor(String userlandId);
+
+    /** Stops the runit supervisor for userland [userlandId] — supervised services also stop. */
+    boolean stopRunitSupervisor(String userlandId);
+
+    /** True if the runit supervisor is currently running for userland [userlandId]. */
+    boolean isRunitSupervisorRunning(String userlandId);
+
+    /**
+     * Best-effort, informational-only root detection (su binary / Magisk / test-keys build tags).
+     * NOT wired to any behavior yet — prep for a possible future root-only tier (real chroot with
+     * namespaces/cgroups instead of proot, unlocking Docker/systemd) that is not implemented.
+     */
+    boolean isDeviceRooted();
 }
