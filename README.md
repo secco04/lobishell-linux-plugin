@@ -59,12 +59,17 @@ unprivileged process fake `chroot`/`bind mount`/fake-root without any kernel mod
 access. proot execs its own loader, which `mmap`s the guest Ubuntu binaries directly, sidestepping
 the app data-dir's `noexec` restriction entirely — no linker-exec trick, no LD_PRELOAD shim needed.
 
-`libproot.so` / `libproot-loader.so` (prebuilt, `app/src/main/jniLibs/`) are proot's official
-binaries. **proot is licensed GPL-2.0-or-later** (confirmed directly from the binary's own
-embedded help text) — see [LICENSE](LICENSE). This is the reason this plugin is its own
-repo/app, entirely separate from the commercial main LobiShell app: a GPL binary is bundled
-and shipped here, so this whole project must be (and is) GPL-2.0-or-later itself. Source:
-https://github.com/proot-me/proot
+`libproot.so` / `libproot-loader.so` (prebuilt, `app/src/main/jniLibs/`), plus their runtime
+deps `libtalloc.so.2-*` and `libandroid-shmem.so-*` (`app/src/main/assets/`), are prebuilt
+binaries sourced from **Termux's** Android build of proot (their fork of
+[proot-me/proot](https://github.com/proot-me/proot)) and its dependencies — confirmed by
+`/data/data/com.termux/...` paths and `termux-exec` checks embedded directly in the binaries.
+**No Termux application source code (UI, services, etc.) is used anywhere in this project** —
+only these three prebuilt native libraries. proot itself is **GPL-2.0** — see
+[LICENSE](LICENSE) for the full breakdown (talloc is LGPL-3.0-or-later, android-shmem is
+BSD-3-Clause). Bundling the GPL proot binary is why this plugin is its own repo/app, entirely
+separate from the commercial main LobiShell app: a GPL binary is bundled and shipped here, so
+this whole project must be (and is) GPL-2.0-or-later itself.
 
 On first connect, `RootfsInstaller` downloads and extracts a minimal Ubuntu rootfs, then proot
 launches `/bin/bash --login` inside it. Packages installed via `apt` afterwards (Ubuntu's own

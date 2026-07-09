@@ -13,10 +13,45 @@ FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program. If not, see <https://www.gnu.org/licenses/>.
 
-This project bundles proot (libproot.so / libproot-loader.so, prebuilt from
-https://github.com/proot-me/proot), which is itself GPL-2.0-or-later. Bundling
-and distributing that binary is why this whole project is GPL-licensed and
-kept in its own repository, separate from the commercial main LobiShell app.
+This project bundles the following prebuilt third-party binaries:
+
+  - libproot.so / libproot-loader.so — proot, a ptrace-based chroot/bind-mount
+    implementation. Built from Termux's fork (https://github.com/termux/proot,
+    itself a patched copy of the original https://github.com/proot-me/proot),
+    licensed GPL-2.0 (confirmed from that repo's own COPYING file). Bundling
+    and distributing this binary is why this whole project is GPL-licensed and
+    kept in its own repository, separate from the commercial main LobiShell app.
+
+  - libtalloc.so.2-* — Samba's talloc memory-allocation library, a runtime
+    dependency of proot. Built for Android via Termux's packaging
+    (termux-packages), licensed LGPL-3.0-or-later. Unmodified upstream source:
+    https://github.com/samba-team/samba/tree/master/lib/talloc
+
+  - libandroid-shmem.so-* — System V shared-memory emulation on Android (via
+    ashmem), another proot runtime dependency. From
+    https://github.com/termux/libandroid-shmem, licensed BSD-3-Clause:
+
+      Copyright (c) 2013, Sergii Pylypenko
+      Copyright (c) 2017, Fredrik Fornwall
+      All rights reserved.
+
+      Redistribution and use in source and binary forms, with or without
+      modification, are permitted provided that the following conditions are
+      met: redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer;
+      redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution;
+      neither the name of the copyright holder nor the names of its
+      contributors may be used to endorse or promote products derived from
+      this software without specific prior written permission. THIS SOFTWARE
+      IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
+      EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+      IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+      PURPOSE ARE DISCLAIMED.
+
+None of these binaries were modified from their upstream/Termux-packaged
+form before being bundled here.
 
 ----
 
