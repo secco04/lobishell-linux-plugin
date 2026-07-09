@@ -12,8 +12,8 @@ android {
         applicationId = "de.lobianco.saftssh.linux"
         minSdk = 26
         targetSdk = 37
-        versionCode =  7
-        versionName = "1.7 "
+        versionCode =  9
+        versionName = "1.9"
 
         externalNativeBuild {
             cmake {
@@ -24,6 +24,35 @@ android {
 
     buildFeatures {
         aidl = true
+        buildConfig = true
+    }
+
+    // Two flavors with DIFFERENT applicationIds so both can be installed side by side:
+    //  - standard: de.lobianco.saftssh.linux       (proot, no root, Play-Store-safe)
+    //  - root:     de.lobianco.saftssh.linux.root  (real root chroot, GitHub-only)
+    // The main app binds whichever a connection selects. Because the plugin DEFINES a custom
+    // permission and two installed apps may NOT define the same permission name (Android rejects
+    // the 2nd install with INSTALL_FAILED_DUPLICATE_PERMISSION), the permission name is
+    // flavor-specific via the ${pluginPermission} manifest placeholder; the main app holds both.
+    // The bind-action string stays identical across flavors (main app disambiguates by setPackage).
+    flavorDimensions += "root"
+    productFlavors {
+        create("standard") {
+            dimension = "root"
+            buildConfigField("boolean", "SUPPORTS_ROOT_CONTAINERS", "false")
+            manifestPlaceholders["pluginPermission"] = "de.lobianco.saftssh.linux.READ_BINARY"
+            manifestPlaceholders["pluginLabel"] = "LobiShell Linux Plugin"
+            manifestPlaceholders["pluginPermLabel"] = "Access LobiShell Linux Plugin"
+        }
+        create("root") {
+            dimension = "root"
+            applicationIdSuffix = ".root"
+            buildConfigField("boolean", "SUPPORTS_ROOT_CONTAINERS", "true")
+            versionNameSuffix = "-root"
+            manifestPlaceholders["pluginPermission"] = "de.lobianco.saftssh.linux.root.READ_BINARY"
+            manifestPlaceholders["pluginLabel"] = "LobiShell Linux Plugin (Root)"
+            manifestPlaceholders["pluginPermLabel"] = "Access LobiShell Linux Plugin (Root)"
+        }
     }
 
     externalNativeBuild {

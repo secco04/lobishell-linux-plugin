@@ -110,13 +110,13 @@ class LinuxSessionService : Service() {
     private val serviceStub = object : ILinuxSessionService.Stub() {
 
         override fun createSession(
-            cols: Int, rows: Int, cwd: String?, userlandId: String?, callback: ILinuxSessionCallback?,
+            cols: Int, rows: Int, cwd: String?, userlandId: String?, rootChroot: Boolean, callback: ILinuxSessionCallback?,
         ): ILinuxSession? {
             // Forward setup progress to the client terminal (best-effort; oneway, can't block us).
             val progress: (String) -> Unit = { line -> runCatching { callback?.onProgress(line) } }
             val id = userlandId?.takeIf { it.isNotBlank() } ?: "default"
             return try {
-                val session = buildSession(cols, rows, cwd, id, progress)
+                val session = buildSession(cols, rows, cwd, id, rootChroot, progress)
                 openSessions.add(session)
                 promoteToForeground()
                 Log.i(TAG, "createSession[$id]: pid=${session.pidValue} masterFd=${session.masterFd}")
@@ -199,9 +199,19 @@ class LinuxSessionService : Service() {
             // never reached, and nothing gets logged because the process is still "alive", just
             // stuck. This is very likely why installing openssh-server manually (in a real
             // interactive session, which behaves differently) worked while the automatic path didn't.
-            "{ [ -x /usr/sbin/sshd ] || (apt-get update && " +
+            // On the very FIRST launch this fires WHILE the interactive session's own first-run
+            // bulk `apt-get install` (which already includes openssh-server) is still running on
+            // the same rootfs. Two apt-get processes racing the /var/lib/apt/lists lock is what
+            // caused "Could not get lock ... held by process N (apt-get)" — and DPkg::Lock::Timeout
+            // alone didn't reliably cover that lists lock. So instead of racing, WAIT (poll) up to
+            // ~10 min for sshd to appear (installed by first-run); only self-install via apt if it
+            // never shows up (i.e. the user declined the first-run package install). This removes
+            // the concurrent apt entirely in the normal case. The lock timeout stays as a backstop
+            // for the rare decline-then-install path.
+            "{ i=0; while [ ! -x /usr/sbin/sshd ] && [ \$i -lt 120 ]; do sleep 5; i=\$((i+1)); done; " +
+            "[ -x /usr/sbin/sshd ] || (apt-get -o DPkg::Lock::Timeout=600 update && " +
             "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 " +
-            "apt-get install -y -o Dpkg::Use-Pty=0 openssh-server); } && " +
+            "apt-get install -y -o Dpkg::Use-Pty=0 -o DPkg::Lock::Timeout=600 openssh-server); } && " +
             // sshd's privilege-separation dir (/run/sshd) is normally created by the init system
             // at boot (or openssh-server's own init script). There is no init running inside proot,
             // so without this sshd exits immediately with "Missing privilege separation directory:
@@ -329,11 +339,11 @@ class LinuxSessionService : Service() {
         return true
     }
 
-    // ── Persistent runit supervisor — the no-root "systemd/Docker need an init" answer ─────
+    // ── Persistent runit supervisor — the no-root "daemons expect an init" answer ───────────
     // runit gives us the one thing no-root userlands actually miss: a supervisor that starts and
-    // respawns arbitrary services under /etc/service/<name>/run. It does NOT give real container
-    // isolation (no cgroups/namespaces — proot can't provide those without root), so this is not a
-    // Docker replacement, just an init replacement for daemons that expect one to exist.
+    // respawns arbitrary services under /etc/service/<name>/run. It does NOT give real process
+    // isolation (no cgroups/namespaces — proot can't provide those without root), so this is just
+    // an init replacement for daemons that expect one to exist.
 
     /** Same shape as [buildSshdSetupScript]: installs runit on first use (idempotent), makes sure
      *  the service directory exists, then execs into runsvdir so its PID persists as the
@@ -341,9 +351,13 @@ class LinuxSessionService : Service() {
     private fun buildRunitSetupScript(): String =
         "exec >/tmp/lobishell-runit-setup.log 2>&1; " +
         "mkdir -p /etc/service && " +
-        "{ [ -x /usr/bin/runsvdir ] || (apt-get update && " +
+        // Same first-launch concurrent-apt avoidance as the sshd path: wait for runsvdir (installed
+        // by the first-run bulk install) instead of racing a second apt-get, self-installing only
+        // if it never appears (user declined first-run packages). See buildSshdSetupScript.
+        "{ i=0; while [ ! -x /usr/bin/runsvdir ] && [ \$i -lt 120 ]; do sleep 5; i=\$((i+1)); done; " +
+        "[ -x /usr/bin/runsvdir ] || (apt-get -o DPkg::Lock::Timeout=600 update && " +
         "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 " +
-        "apt-get install -y -o Dpkg::Use-Pty=0 runit); } && " +
+        "apt-get install -y -o Dpkg::Use-Pty=0 -o DPkg::Lock::Timeout=600 runit); } && " +
         "exec runsvdir /etc/service"
 
     /** Starts (idempotent) the runit supervisor for [userlandId], as its OWN proot invocation —
@@ -427,7 +441,7 @@ class LinuxSessionService : Service() {
 
     // ── Session factory ────────────────────────────────────────────────────
 
-    private fun buildSession(cols: Int, rows: Int, cwd: String?, userlandId: String, progress: (String) -> Unit): SessionImpl {
+    private fun buildSession(cols: Int, rows: Int, cwd: String?, userlandId: String, rootChroot: Boolean, progress: (String) -> Unit): SessionImpl {
         val binary: String
         val args: Array<String>
         val env: Array<String>
@@ -439,6 +453,74 @@ class LinuxSessionService : Service() {
         RootfsInstaller.install(this, userlandId, progress)
 
         if (RootfsInstaller.isInstalled(this, userlandId)) {
+            // Root-chroot mode is opt-in PER CONNECTION ([rootChroot], from the connection editor),
+            // and only actually possible when this is the `root` build flavor AND the device is
+            // really rooted. So the same install can run one userland via proot (this flag off) and
+            // another via root chroot (flag on), side by side. See RootContainerSupport's class doc
+            // for what root chroot gives (a genuine root shell, not proot's ptrace-emulated one) and
+            // its caveats. A real chroot also sidesteps proot's 16 KB-page mmap limitation entirely
+            // (the kernel's own ELF loader runs the guest binaries directly), so it works on
+            // 16 KB-page devices too.
+            //
+            // IMPORTANT: when the user explicitly asked for root chroot, an inability to honor it
+            // must be a hard failure here, NOT a silent fall-through into the proot branch below —
+            // a proot session that looks and behaves like what was requested but silently ISN'T
+            // would be actively misleading.
+            if (rootChroot) {
+                if (!BuildConfig.SUPPORTS_ROOT_CONTAINERS) {
+                    error("Root chroot requested, but this is the standard (non-root) plugin build. Install the root-flavored plugin (de.lobianco.saftssh.linux.root) to use it.")
+                }
+                if (!RootDetector.hasWorkingRootAccess()) {
+                    error("Root chroot requested, but no root access is available on this device (su not found, or root access not granted to this app).")
+                }
+                RootfsInstaller.configureRootfs(this, userlandId)
+                progress("Starting Ubuntu (root chroot)…")
+                val rootfs = RootfsInstaller.rootfsDir(this, userlandId).absolutePath
+                val tmp    = RootfsInstaller.tmpDir(this, userlandId).apply { mkdirs() }.absolutePath
+                // NB: runit is intentionally NOT in this root-chroot list. Its dpkg postinst talks
+                // to PID 1 directly (not via invoke-rc.d, so policy-rc.d doesn't stop it) and fails
+                // in the chroot — and a single failing postinst aborts the WHOLE apt transaction.
+                // runit stays available in the proot flavor / on-demand supervisor install instead.
+                val pkgs = "curl wget ca-certificates git python3 python3-pip nano vim less htop " +
+                    "unzip zip iputils-ping iproute2 net-tools dnsutils openssh-client openssh-server " +
+                    "gnupg sudo file tree"
+                // Runs AFTER the chroot (see buildRootChrootScript's doc) — this is real Ubuntu
+                // userspace here, apt-get/bash/etc. all exist.
+                val innerScript =
+                    "if [ ! -e /etc/.lobishell_setup ]; then " +
+                    "printf '\\n\\033[1mInstall recommended packages?\\033[0m\\n(%s)\\n[Y/n] ' '$pkgs'; " +
+                    "read ans; case \"\$ans\" in " +
+                    "n|N) echo 'Skipped — install later with: apt install <pkg>';; " +
+                    // policy-rc.d returning 101 makes invoke-rc.d (called by package postinst
+                    // scripts) SKIP starting/restarting services. Without it, service packages like
+                    // runit and openssh-server try to launch their daemon via the init system during
+                    // `apt install` — which fails in a chroot with no init, breaking dpkg ("Sub-
+                    // process /usr/bin/dpkg returned an error code") and leaving apt half-configured.
+                    // The standard debootstrap/chroot technique. Removed again right after so the
+                    // user can start services normally afterwards.
+                    "*) printf '#!/bin/sh\\nexit 101\\n' > /usr/sbin/policy-rc.d; chmod +x /usr/sbin/policy-rc.d; " +
+                    "apt-get -o DPkg::Lock::Timeout=600 update && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 " +
+                    "apt-get install -y -o Dpkg::Use-Pty=0 -o DPkg::Lock::Timeout=600 $pkgs; " +
+                    "rm -f /usr/sbin/policy-rc.d;; " +
+                    "esac; touch /etc/.lobishell_setup; fi; exec /bin/bash --login"
+                val firstRun = RootContainerSupport.buildRootChrootScript(rootfs, tmp, innerScript)
+
+                // execve (which forkAndExec uses under the hood) needs an absolute path — it does
+                // NOT do a $PATH search the way execvp/a shell's own command lookup does. "su"
+                // itself lives at very different paths across root solutions (Magisk/KernelSU/
+                // APatch/...), so instead of guessing, exec the guaranteed-present /system/bin/sh
+                // and let ITS normal command lookup find "su" on $PATH, exactly like an interactive
+                // user typing `su -c ...` would. The actual script is passed through an env var
+                // (not interpolated into the command line) so its own internal quotes never need
+                // double-escaping — same trick already used for LOBISHELL_SSHD_SECRET above.
+                binary = "/system/bin/sh"
+                args = arrayOf("sh", "-c", "exec su -c \"\$LOBISHELL_ROOT_SCRIPT\"")
+                linker = ""
+                env = arrayOf(
+                    "TERM=xterm-256color", "COLUMNS=$cols", "LINES=$rows",
+                    "LOBISHELL_ROOT_SCRIPT=$firstRun"
+                )
+            } else {
             // proot ptrace-passes-through raw kernel syscalls to the GUEST's own dynamic linker,
             // which mmaps Ubuntu's official prebuilt libc/coreutils (built with the standard 4 KB
             // p_align). On a host kernel enforcing real 16 KB pages, mmap() then rejects those
@@ -468,14 +550,16 @@ class LinuxSessionService : Service() {
             // On the very first launch, offer to install a curated set of everyday packages (the
             // marker /etc/.lobishell_setup is created afterwards so we only ask once). $ans is a
             // shell var (escaped); $pkgs is substituted by Kotlin.
-            // openssh-server and runit are included here so they're already installed by the time
-            // anyone flips "Remote SSH access" or starts the service supervisor — the on-demand
-            // `apt-get install` in startSshdInternal()/startRunitSupervisorInternal() then just
-            // short-circuits on the `[ -x ... ]` check instead of needing a full network install at
-            // toggle-time (which is where the earlier needrestart-hang bug bit hardest).
+            // openssh-server is included here so it's already installed by the time anyone flips
+            // "Remote SSH access" — the on-demand apt-get in startSshdInternal() then short-circuits
+            // on `[ -x /usr/sbin/sshd ]`.
+            // runit is intentionally NOT bulk-installed: its dpkg postinst talks to PID 1 directly
+            // and fails ("Sub-process /usr/bin/dpkg returned an error code") under BOTH proot and
+            // chroot, which aborts the whole apt transaction. The runit-supervisor feature installs
+            // it on demand instead, where a single-package failure doesn't take everything down.
             val pkgs = "curl wget ca-certificates git python3 python3-pip nano vim less htop " +
                 "unzip zip iputils-ping iproute2 net-tools dnsutils openssh-client openssh-server " +
-                "gnupg sudo file tree runit"
+                "gnupg sudo file tree"
             val firstRun =
                 "if [ ! -e /etc/.lobishell_setup ]; then " +
                 "printf '\\n\\033[1mInstall recommended packages?\\033[0m\\n(%s)\\n[Y/n] ' '$pkgs'; " +
@@ -519,6 +603,7 @@ class LinuxSessionService : Service() {
                 add("COLUMNS=$cols")
                 add("LINES=$rows")
             }.toTypedArray()
+            }
         } else {
             // Fallback: plain /system/bin/sh, direct exec (proot rootfs install failed/unavailable).
             // Start in the plugin's OWN files dir — the cwd passed by the main app points at the

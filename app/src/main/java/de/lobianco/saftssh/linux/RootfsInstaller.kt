@@ -83,15 +83,40 @@ object RootfsInstaller {
     fun clear(context: Context, id: String): Long {
         val dir = userlandDir(context, id)
         val freed = dirSize(dir)
+        // Root-chroot mode leaves /dev|/sys|/proc|/tmp bind-mounted under rootfs in the host mount
+        // table (no mount namespace — see RootContainerSupport). deleteRecursively() would fail on
+        // those busy mountpoints, so unmount them first. mountsClear is a SAFETY gate on the root
+        // `rm -rf` below: only escalate to it once we've verified nothing is still mounted under
+        // rootfs, otherwise a root rm could cross a live /dev bind into the host. No-op / clear on
+        // the standard (proot) flavor, where nothing is ever mounted there.
+        val mountsClear = if (BuildConfig.SUPPORTS_ROOT_CONTAINERS)
+            RootContainerSupport.unmountSubmountsBlocking(rootfsDir(context, id).absolutePath)
+        else true
         runCatching { dir.deleteRecursively() }
+        if (dir.exists() && BuildConfig.SUPPORTS_ROOT_CONTAINERS && mountsClear) {
+            RootContainerSupport.forceRemoveBlocking(dir.absolutePath)
+        }
         Log.i(TAG, "Cleared userland '$id' — freed $freed bytes")
         return freed
     }
 
-    private fun dirSize(f: File): Long = when {
-        !f.exists() -> 0L
-        f.isFile -> f.length()
-        else -> f.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+    private fun dirSize(f: File): Long {
+        if (!f.exists()) return 0L
+        if (f.isFile) return f.length()
+        // Root-chroot sessions bind-mount /dev|/sys|/proc|/tmp under rootfs and DON'T clean them up
+        // until the userland is deleted, so a size walk done while a session has run would descend
+        // into the still-mounted /proc — where virtual files like /proc/kcore report a fake length
+        // equal to the machine's whole memory (multiple GB), wildly inflating the reported size.
+        // Refuse to cross filesystem boundaries (mountpoints have a different st_dev than the top
+        // dir): that skips every bind mount and virtual fs, counting only the real rootfs files.
+        val topDev = runCatching { Os.lstat(f.absolutePath).st_dev }.getOrNull()
+        return f.walkTopDown()
+            .onEnter { dir ->
+                topDev == null ||
+                    runCatching { Os.lstat(dir.absolutePath).st_dev }.getOrDefault(topDev) == topDev
+            }
+            .filter { it.isFile }
+            .sumOf { it.length() }
     }
 
     fun arch(): String = when (Build.SUPPORTED_ABIS.firstOrNull()) {
@@ -162,6 +187,18 @@ object RootfsInstaller {
                 "deb $sec noble-security main restricted universe multiverse\n"
             )
             File(rootfs, "etc/apt/sources.list.d/ubuntu.sources").delete()
+
+            // Disable apt's download sandbox. apt normally drops to the unprivileged `_apt` user to
+            // fetch packages, but inside our chroot/proot on Android's app-private data partition
+            // `_apt` can't traverse into the partial-download dir → the noisy "Download is performed
+            // unsandboxed as root ... could not be accessed by user '_apt' (13: Permission denied)"
+            // warning (apt then falls back to downloading as root anyway). Telling apt to just use
+            // root for the sandbox user is the standard fix for chroot/container rootfs (proot-distro
+            // does the same). Idempotent — rewritten every launch alongside the sources above.
+            File(rootfs, "etc/apt/apt.conf.d").mkdirs()
+            File(rootfs, "etc/apt/apt.conf.d/99lobishell-nosandbox").writeText(
+                "APT::Sandbox::User \"root\";\n"
+            )
 
             // Silence "groups: cannot find name for group ID …" by adding the app's process GIDs.
             val gids = linkedSetOf(Os.getgid(), Os.getuid())
@@ -251,7 +288,19 @@ object RootfsInstaller {
             }
         }
 
+        // Same reason as clear(): a prior root-chroot session may have left bind mounts under the
+        // old rootfs, which would make deleteRecursively() (and thus the rename below) fail with
+        // "could not move staging". Unmount everything under it first, then delete — escalating to
+        // a root `rm -rf` ONLY if that unmount verified the tree is mount-free (mountsClear), so a
+        // root rm can never cross a live /dev bind into the host. All no-ops on the standard proot
+        // flavor. Only after rootfs is truly gone can staging be renamed into its place.
+        val mountsClear = if (BuildConfig.SUPPORTS_ROOT_CONTAINERS && rootfs.exists())
+            RootContainerSupport.unmountSubmountsBlocking(rootfs.absolutePath)
+        else true
         if (rootfs.exists()) rootfs.deleteRecursively()
+        if (rootfs.exists() && BuildConfig.SUPPORTS_ROOT_CONTAINERS && mountsClear) {
+            RootContainerSupport.forceRemoveBlocking(rootfs.absolutePath)
+        }
         if (!staging.renameTo(rootfs)) error("Could not move staging → ${rootfs.absolutePath}")
         Log.i(TAG, "Rootfs extracted to ${rootfs.absolutePath}")
     }

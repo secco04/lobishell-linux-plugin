@@ -9,6 +9,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -83,9 +84,10 @@ class InfoActivity : Activity() {
                 This plugin only works together with LobiShell.
                 It is not a standalone application and cannot
                 be used without the main LobiShell app.
-
-                No configuration is required here.
-            """.trimIndent()
+            """.trimIndent() + if (BuildConfig.SUPPORTS_ROOT_CONTAINERS)
+                "\n\nThis is the root build — see below."
+            else
+                "\n\nNo configuration is required here."
 
             textSize = 15f
             setTextColor(Color.rgb(220, 225, 235))
@@ -104,6 +106,64 @@ class InfoActivity : Activity() {
         card.addView(title)
         card.addView(subtitle)
         card.addView(description)
+
+        // ── Root flavor only: explicit, user-initiated "Grant Root Access" moment ───────────
+        // A deliberate button tap here — with this Activity actually in the foreground and
+        // visible — is a much cleaner trigger for the su prompt than the first time
+        // LinuxSessionService silently calls `su -c ...` from a background bound-service
+        // context when the user opens a Linux tab in the main app. That silent, out-of-nowhere
+        // prompt is also the more suspicious-looking context for Magisk's own tapjacking check.
+        if (BuildConfig.SUPPORTS_ROOT_CONTAINERS) {
+            val rootStatus = TextView(this).apply {
+                // isDeviceRooted() is a cheap static heuristic (file paths + Magisk package name)
+                // that can false-negative on modern setups (Magisk hides its su mount from
+                // unprivileged processes, and offers an app-name randomizer specifically to defeat
+                // the package-name check) — so this label is phrased as a hint, not a verdict. The
+                // button below runs the real, authoritative `su -c id` test.
+                text = if (RootDetector.isDeviceRooted(this@InfoActivity))
+                    "Root indicators found on this device."
+                else
+                    "No common root indicators found — tap below to test for sure."
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(170, 180, 200))
+                setPadding(0, 24, 0, 12)
+            }
+
+            val grantResult = TextView(this).apply {
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(220, 225, 235))
+                setPadding(0, 12, 0, 0)
+            }
+
+            val grantButton = Button(this).apply {
+                text = "Grant Root Access"
+                setOnClickListener {
+                    isEnabled = false
+                    grantResult.text = "Requesting root — check for a superuser prompt…"
+                    Thread {
+                        val granted = RootDetector.hasWorkingRootAccess()
+                        runOnUiThread {
+                            grantResult.text = if (granted)
+                                "✓ Root access granted — container support is ready."
+                            else
+                                "✗ Root access denied or su not found. If a superuser prompt " +
+                                "couldn't be confirmed, check Settings → Apps → Special app " +
+                                "access → \"Display over other apps\" for anything else enabled " +
+                                "there, and disable it — that blocks Magisk's prompt as a " +
+                                "tapjacking precaution."
+                            isEnabled = true
+                        }
+                    }.start()
+                }
+            }
+
+            card.addView(rootStatus)
+            card.addView(grantButton)
+            card.addView(grantResult)
+        }
+
         card.addView(badge)
 
         root.addView(

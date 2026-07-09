@@ -8,9 +8,14 @@ import de.lobianco.saftssh.linux.ILinuxSessionCallback;
 interface ILinuxSessionService {
     /**
      * Create a PTY-backed Linux session for the userland [userlandId] (one rootfs per connection).
+     * [rootChroot] requests real-root chroot mode for THIS session (a genuine root shell, not
+     * proot's ptrace-emulated one) instead of the default no-root proot — a per-connection choice.
+     * Only honored when the plugin is the root build AND the device has working root access;
+     * otherwise createSession() fails outright (does NOT silently fall back to proot — a session
+     * that looks like what was requested but silently isn't would be misleading).
      * [callback] receives setup progress (may be null).
      */
-    ILinuxSession createSession(int cols, int rows, String cwd, String userlandId, in ILinuxSessionCallback callback);
+    ILinuxSession createSession(int cols, int rows, String cwd, String userlandId, boolean rootChroot, in ILinuxSessionCallback callback);
 
     /** Ids of all installed userlands. */
     String[] listUserlandIds();
@@ -53,9 +58,9 @@ interface ILinuxSessionService {
     boolean isRunitSupervisorRunning(String userlandId);
 
     /**
-     * Best-effort, informational-only root detection (su binary / Magisk / test-keys build tags).
-     * NOT wired to any behavior yet — prep for a possible future root-only tier (real chroot with
-     * namespaces/cgroups instead of proot, unlocking Docker/systemd) that is not implemented.
+     * Best-effort, informational-only root detection (su binary / Magisk / test-keys build tags) —
+     * NOT the check createSession()'s [rootChroot] actually gates on (that uses a real `su -c id`
+     * probe internally); this is a cheap hint only, not wired to any main-app behavior.
      */
     boolean isDeviceRooted();
 }

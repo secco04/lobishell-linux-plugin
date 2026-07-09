@@ -15,19 +15,27 @@
     <!--
         Permission that the main LobiShell app holds and is checked on service bind.
 
-        protectionLevel="normal" is intentional: both apps may be signed with different keys
-        (plugin is distributed separately / open-source, main app is closed-source commercial).
-        Using "signature" would require identical signing keys, breaking cross-signed installs.
-        The service itself is restricted to apps that explicitly hold this permission AND declare
-        it in their manifest — combined with the exported="true" + permission attribute on the
-        <service> element this is the correct approach for cross-app IPC without shared signing.
+        Both apps may be signed with different keys (plugin is distributed separately /
+        open-source, main app is closed-source commercial), so protectionLevel="signature" is
+        not an option — it requires identical signing keys, breaking cross-signed installs.
+
+        protectionLevel="dangerous" (NOT "normal") is intentional: a "normal" custom permission
+        is only granted to the requesting app at THAT app's own install/update time, checked
+        against whatever permissions already exist on the device at that moment. Since almost
+        every real user installs the main LobiShell app (Play Store) long before ever installing
+        this plugin (GitHub-only), a "normal" grant would silently and permanently fail for
+        virtually everyone — the permission wouldn't exist yet when the main app was granted its
+        permissions. "dangerous" permissions are instead requested on demand at runtime
+        (requestPermissions()), which works regardless of install order. The main app requests
+        this once, right when the user enables the matching plugin.
     -->
     <permission
-        android:name="de.lobianco.saftssh.linux.READ_BINARY"
-        android:protectionLevel="normal" />
+        android:name="${pluginPermission}"
+        android:protectionLevel="dangerous"
+        android:label="${pluginPermLabel}" />
 
     <application
-        android:label="LobiShell Linux Plugin"
+        android:label="${pluginLabel}"
         android:allowBackup="false"
         android:supportsRtl="true"
         android:icon="@mipmap/ic_launcher"
@@ -54,7 +62,7 @@
         <service
             android:name=".LinuxSessionService"
             android:exported="true"
-            android:permission="de.lobianco.saftssh.linux.READ_BINARY"
+            android:permission="${pluginPermission}"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
