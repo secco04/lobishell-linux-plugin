@@ -12,28 +12,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!--
-        Permission that the main LobiShell app holds and is checked on service bind.
-
-        Both apps may be signed with different keys (plugin is distributed separately /
-        open-source, main app is closed-source commercial), so protectionLevel="signature" is
-        not an option — it requires identical signing keys, breaking cross-signed installs.
-
-        protectionLevel="dangerous" (NOT "normal") is intentional: a "normal" custom permission
-        is only granted to the requesting app at THAT app's own install/update time, checked
-        against whatever permissions already exist on the device at that moment. Since almost
-        every real user installs the main LobiShell app (Play Store) long before ever installing
-        this plugin (GitHub-only), a "normal" grant would silently and permanently fail for
-        virtually everyone — the permission wouldn't exist yet when the main app was granted its
-        permissions. "dangerous" permissions are instead requested on demand at runtime
-        (requestPermissions()), which works regardless of install order. The main app requests
-        this once, right when the user enables the matching plugin.
-    -->
-    <permission
-        android:name="${pluginPermission}"
-        android:protectionLevel="dangerous"
-        android:label="${pluginPermLabel}" />
-
     <application
         android:label="${pluginLabel}"
         android:allowBackup="false"
@@ -56,13 +34,13 @@
         </activity>
 
         <!--
-            The PTY session service. Only apps that hold READ_BINARY may bind.
-            The main LobiShell app requests this permission in its manifest.
+            The PTY session service. exported="true" is required for cross-app binding, but no
+            custom Android permission gates it (see LinuxSessionService.onBind's doc for why) —
+            it checks the caller's package identity directly instead.
         -->
         <service
             android:name=".LinuxSessionService"
             android:exported="true"
-            android:permission="${pluginPermission}"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"

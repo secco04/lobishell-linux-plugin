@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
@@ -16,6 +17,24 @@ import java.util.Collections
 private const val TAG = "LinuxSessionService"
 private const val NOTIF_CHANNEL_ID = "linux_session"
 private const val NOTIF_ID = 1
+
+/** Only the main LobiShell app may use this service. NOT enforced via a custom Android
+ *  permission — a dangerous-protectionLevel custom permission with no recognized permission
+ *  group renders as "Allow LobiShell to perform an unknown action?" in the system grant dialog
+ *  (confirmed against AOSP's PermissionController source: that's its hardcoded
+ *  default_permission_description fallback for any group-less custom permission, regardless of
+ *  our own android:label — not something fixable from the manifest). Checking the caller's
+ *  package identity directly avoids that dialog entirely while still blocking unrelated apps:
+ *  Android enforces package-name uniqueness device-wide, so nothing else can bind here under
+ *  this exact package id short of it being sideloaded in place of the real app.
+ *
+ *  IMPORTANT: this check must live in the AIDL Stub's method bodies, NOT in Service.onBind() —
+ *  onBind() is a local lifecycle callback dispatched by this process's own ActivityThread, not a
+ *  live incoming Binder transaction, so Binder.getCallingUid() there just returns THIS process's
+ *  own uid (confirmed on-device: it resolved to this plugin's own package, never the caller's —
+ *  silently rejecting every real client). AIDL Stub methods, in contrast, genuinely execute
+ *  inside the calling transaction, where getCallingUid() is meaningful. */
+private val ALLOWED_CALLER_PACKAGES = setOf("de.lobianco.saftssh")
 
 /**
  * Bound AIDL service that forkpty()'s a shell and hands the PTY master fd back to the main LobiShell
@@ -44,6 +63,18 @@ class LinuxSessionService : Service() {
         Collections.synchronizedMap(mutableMapOf())
 
     override fun onBind(intent: Intent?): IBinder = serviceStub
+
+    /** True if the app on the other end of the CURRENT incoming Binder transaction is an
+     *  authorized caller. Must only be called from inside an AIDL Stub method body. */
+    private fun isCallerAuthorized(): Boolean {
+        val callingUid = Binder.getCallingUid()
+        val callerPackages = packageManager.getPackagesForUid(callingUid) ?: arrayOf()
+        val authorized = callerPackages.any { it in ALLOWED_CALLER_PACKAGES }
+        if (!authorized) {
+            Log.w(TAG, "Rejected call from unauthorized caller uid=$callingUid packages=${callerPackages.joinToString()}")
+        }
+        return authorized
+    }
 
     override fun onDestroy() {
         super.onDestroy()
@@ -112,6 +143,7 @@ class LinuxSessionService : Service() {
         override fun createSession(
             cols: Int, rows: Int, cwd: String?, userlandId: String?, rootChroot: Boolean, callback: ILinuxSessionCallback?,
         ): ILinuxSession? {
+            if (!isCallerAuthorized()) return null
             // Forward setup progress to the client terminal (best-effort; oneway, can't block us).
             val progress: (String) -> Unit = { line -> runCatching { callback?.onProgress(line) } }
             val id = userlandId?.takeIf { it.isNotBlank() } ?: "default"
@@ -128,40 +160,60 @@ class LinuxSessionService : Service() {
             }
         }
 
-        override fun listUserlandIds(): Array<String> =
-            RootfsInstaller.listUserlandIds(this@LinuxSessionService).toTypedArray()
+        override fun listUserlandIds(): Array<String> {
+            if (!isCallerAuthorized()) return arrayOf()
+            return RootfsInstaller.listUserlandIds(this@LinuxSessionService).toTypedArray()
+        }
 
-        override fun userlandSize(userlandId: String?): Long =
-            RootfsInstaller.userlandSize(this@LinuxSessionService, userlandId ?: "default")
+        override fun userlandSize(userlandId: String?): Long {
+            if (!isCallerAuthorized()) return 0L
+            return RootfsInstaller.userlandSize(this@LinuxSessionService, userlandId ?: "default")
+        }
 
-        override fun clearUserland(userlandId: String?): Long =
-            RootfsInstaller.clear(this@LinuxSessionService, userlandId ?: "default")
+        override fun clearUserland(userlandId: String?): Long {
+            if (!isCallerAuthorized()) return 0L
+            return RootfsInstaller.clear(this@LinuxSessionService, userlandId ?: "default")
+        }
 
-        override fun startSshd(userlandId: String?, port: Int, authMode: String?, secret: String?): Boolean =
-            this@LinuxSessionService.startSshdInternal(
+        override fun startSshd(userlandId: String?, port: Int, authMode: String?, secret: String?): Boolean {
+            if (!isCallerAuthorized()) return false
+            return this@LinuxSessionService.startSshdInternal(
                 userlandId?.takeIf { it.isNotBlank() } ?: "default",
                 port,
                 if (authMode == "pubkey") "pubkey" else "password",
                 secret ?: ""
             )
+        }
 
-        override fun stopSshd(userlandId: String?): Boolean =
-            this@LinuxSessionService.stopSshdInternal(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+        override fun stopSshd(userlandId: String?): Boolean {
+            if (!isCallerAuthorized()) return false
+            return this@LinuxSessionService.stopSshdInternal(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+        }
 
-        override fun isSshdRunning(userlandId: String?): Boolean =
-            sshdSessions.containsKey(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+        override fun isSshdRunning(userlandId: String?): Boolean {
+            if (!isCallerAuthorized()) return false
+            return sshdSessions.containsKey(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+        }
 
-        override fun startRunitSupervisor(userlandId: String?): Boolean =
-            this@LinuxSessionService.startRunitSupervisorInternal(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+        override fun startRunitSupervisor(userlandId: String?): Boolean {
+            if (!isCallerAuthorized()) return false
+            return this@LinuxSessionService.startRunitSupervisorInternal(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+        }
 
-        override fun stopRunitSupervisor(userlandId: String?): Boolean =
-            this@LinuxSessionService.stopRunitSupervisorInternal(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+        override fun stopRunitSupervisor(userlandId: String?): Boolean {
+            if (!isCallerAuthorized()) return false
+            return this@LinuxSessionService.stopRunitSupervisorInternal(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+        }
 
-        override fun isRunitSupervisorRunning(userlandId: String?): Boolean =
-            runitSessions.containsKey(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+        override fun isRunitSupervisorRunning(userlandId: String?): Boolean {
+            if (!isCallerAuthorized()) return false
+            return runitSessions.containsKey(userlandId?.takeIf { it.isNotBlank() } ?: "default")
+        }
 
-        override fun isDeviceRooted(): Boolean =
-            RootDetector.isDeviceRooted(this@LinuxSessionService)
+        override fun isDeviceRooted(): Boolean {
+            if (!isCallerAuthorized()) return false
+            return RootDetector.isDeviceRooted(this@LinuxSessionService)
+        }
     }
 
     // ── Persistent sshd (independent of any interactive session) ───────────
