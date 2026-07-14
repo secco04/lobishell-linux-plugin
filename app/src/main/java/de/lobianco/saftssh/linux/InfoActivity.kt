@@ -12,6 +12,7 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 
 class InfoActivity : Activity() {
 
@@ -103,9 +104,30 @@ class InfoActivity : Activity() {
             setPadding(0, 32, 0, 0)
         }
 
+        // Opening this Activity is also the fix for a real Android platform restriction: a
+        // freshly installed/updated app starts in a "stopped" state in which NO other app may
+        // bindService() into it (ApplicationInfo.FLAG_STOPPED) — LobiShell's own bind attempt then
+        // fails with a raw "Not allowed to bind to service" SecurityException until this Activity
+        // is opened at least once. Landing here BECAUSE of that error (rather than by choice) means
+        // there's nothing to actually do here except go back — so give that an explicit button
+        // instead of making the user hunt for LobiShell's icon themselves.
+        val openAppButton = Button(this).apply {
+            text = "Open LobiShell"
+            setPadding(0, 24, 0, 0)
+            setOnClickListener {
+                val launchIntent = packageManager.getLaunchIntentForPackage("de.lobianco.saftssh")
+                if (launchIntent != null) {
+                    startActivity(launchIntent)
+                } else {
+                    Toast.makeText(this@InfoActivity, "LobiShell isn't installed", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
         card.addView(title)
         card.addView(subtitle)
         card.addView(description)
+        card.addView(openAppButton)
 
         // ── Root flavor only: explicit, user-initiated "Grant Root Access" moment ───────────
         // A deliberate button tap here — with this Activity actually in the foreground and
