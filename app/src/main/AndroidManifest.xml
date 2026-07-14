@@ -12,6 +12,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Without this, getPackageManager().getLaunchIntentForPackage() for LobiShell returns null
+         on Android 11+ (API 30+) package-visibility filtering, even when it's installed. -->
+    <queries>
+        <package android:name="de.lobianco.saftssh" />
+    </queries>
+
     <application
         android:label="${pluginLabel}"
         android:allowBackup="false"
