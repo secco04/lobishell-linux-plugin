@@ -12,8 +12,8 @@ android {
         applicationId = "de.lobianco.saftssh.linux"
         minSdk = 26
         targetSdk = 37
-        versionCode =  14
-        versionName = "1.14"
+        versionCode =  15
+        versionName = "1.15"
 
         externalNativeBuild {
             cmake {
@@ -40,14 +40,14 @@ android {
         create("standard") {
             dimension = "root"
             buildConfigField("boolean", "SUPPORTS_ROOT_CONTAINERS", "false")
-            manifestPlaceholders["pluginLabel"] = "LobiShell Linux Plugin"
+            manifestPlaceholders["pluginLabel"] = "Linux Plugin for LobiShell"
         }
         create("root") {
             dimension = "root"
             applicationIdSuffix = ".root"
             buildConfigField("boolean", "SUPPORTS_ROOT_CONTAINERS", "true")
             versionNameSuffix = "-root"
-            manifestPlaceholders["pluginLabel"] = "LobiShell Linux Plugin (Root)"
+            manifestPlaceholders["pluginLabel"] = "Linux Plugin for LobiShell (Root)"
         }
     }
 
