@@ -12,8 +12,8 @@ android {
         applicationId = "de.lobianco.saftssh.linux"
         minSdk = 26
         targetSdk = 37
-        versionCode =  16
-        versionName = "1.16"
+        versionCode =  17
+        versionName = "1.17"
 
         externalNativeBuild {
             cmake {
