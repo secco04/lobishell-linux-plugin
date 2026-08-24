@@ -124,10 +124,43 @@ class InfoActivity : Activity() {
             }
         }
 
+        val submitLogsButton = Button(this).apply {
+            text = "Submit Logs"
+            setPadding(0, 12, 0, 0)
+            setOnClickListener {
+                runCatching {
+                    val anonymized = de.lobianco.saftssh.linux.data.logging.LogAnonymizer.sanitize(
+                        de.lobianco.saftssh.linux.data.logging.LogFileManager.logFile
+                            .takeIf { it.exists() }?.readText(Charsets.UTF_8)
+                            ?: "(no debug log found)"
+                    )
+                    val cacheFile = java.io.File(cacheDir, "linux_plugin_debug.log").apply {
+                        writeText(anonymized, Charsets.UTF_8)
+                    }
+                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                        this@InfoActivity, "$packageName.fileprovider", cacheFile
+                    )
+                    startActivity(
+                        android.content.Intent.createChooser(
+                            android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            },
+                            "Submit Logs"
+                        )
+                    )
+                }.onFailure {
+                    Toast.makeText(this@InfoActivity, "No log available to share", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
         card.addView(title)
         card.addView(subtitle)
         card.addView(description)
         card.addView(openAppButton)
+        card.addView(submitLogsButton)
 
         // ── Root flavor only: explicit, user-initiated "Grant Root Access" moment ───────────
         // A deliberate button tap here — with this Activity actually in the foreground and

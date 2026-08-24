@@ -10,7 +10,7 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
-import android.util.Log
+import de.lobianco.saftssh.linux.data.logging.AppLog
 import java.io.File
 import java.util.Collections
 
@@ -71,7 +71,7 @@ class LinuxSessionService : Service() {
         val callerPackages = packageManager.getPackagesForUid(callingUid) ?: arrayOf()
         val authorized = callerPackages.any { it in ALLOWED_CALLER_PACKAGES }
         if (!authorized) {
-            Log.w(TAG, "Rejected call from unauthorized caller uid=$callingUid packages=${callerPackages.joinToString()}")
+            AppLog.w(TAG, "Rejected call from unauthorized caller uid=$callingUid packages=${callerPackages.joinToString()}")
         }
         return authorized
     }
@@ -83,7 +83,7 @@ class LinuxSessionService : Service() {
             openSessions.forEach { it.destroySilently() }
             openSessions.clear()
         }
-        Log.i(TAG, "onDestroy: all sessions cleaned up")
+        AppLog.i(TAG, "onDestroy: all sessions cleaned up")
     }
 
     // ── Foreground promotion ───────────────────────────────────────────────
@@ -151,10 +151,10 @@ class LinuxSessionService : Service() {
                 val session = buildSession(cols, rows, cwd, id, rootChroot, progress)
                 openSessions.add(session)
                 promoteToForeground()
-                Log.i(TAG, "createSession[$id]: pid=${session.pidValue} masterFd=${session.masterFd}")
+                AppLog.i(TAG, "createSession[$id]: pid=${session.pidValue} masterFd=${session.masterFd}")
                 session
             } catch (e: Exception) {
-                Log.e(TAG, "createSession failed", e)
+                AppLog.e(TAG, "createSession failed", e)
                 runCatching { callback?.onProgress("Error: ${e.message}") }
                 null
             }
@@ -292,21 +292,21 @@ class LinuxSessionService : Service() {
             // just fixed) would otherwise block every future start attempt forever — the map only
             // clears on stopSshd() or process death, so simply re-toggling SSH access or reopening
             // the userland could look like "the fix didn't take" when actually it never even ran.
-            Log.w(TAG, "startSshd[$userlandId]: stale session (pid=${existing.pidValue} no longer " +
+            AppLog.w(TAG, "startSshd[$userlandId]: stale session (pid=${existing.pidValue} no longer " +
                 "alive) — clearing it so this call actually restarts sshd instead of no-op'ing")
             sshdSessions.remove(userlandId)
             openSessions.remove(existing)
             demoteFromForegroundIfIdle()
         }
         if (!RootfsInstaller.isInstalled(this, userlandId)) {
-            Log.w(TAG, "startSshd[$userlandId]: rootfs not installed yet")
+            AppLog.w(TAG, "startSshd[$userlandId]: rootfs not installed yet")
             return false
         }
         return try {
             // See the identical check + comment in buildSession() — same proot/16KB-page limitation.
             val hostPageSize = android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE)
             if (hostPageSize > 4096) {
-                Log.w(TAG, "startSshd[$userlandId]: host uses ${hostPageSize / 1024} KB pages — proot/Ubuntu unsupported here")
+                AppLog.w(TAG, "startSshd[$userlandId]: host uses ${hostPageSize / 1024} KB pages — proot/Ubuntu unsupported here")
                 return false
             }
             RootfsInstaller.configureRootfs(this, userlandId)
@@ -347,7 +347,7 @@ class LinuxSessionService : Service() {
             sshdSessions[userlandId] = session
             openSessions.add(session)
             promoteToForeground()
-            Log.i(TAG, "startSshd[$userlandId]: pid=${session.pidValue} port=$port mode=$authMode")
+            AppLog.i(TAG, "startSshd[$userlandId]: pid=${session.pidValue} port=$port mode=$authMode")
             // forkAndExec only proves the fork+exec syscalls themselves succeeded — it says nothing
             // about whether the SCRIPT then actually installed/started sshd (apt-get can fail from
             // no network yet, a broken mirror, held packages, etc.), so a caller checking
@@ -358,7 +358,7 @@ class LinuxSessionService : Service() {
             checkSshdLivenessLater(userlandId, session.pidValue)
             true
         } catch (e: Exception) {
-            Log.e(TAG, "startSshd[$userlandId] failed", e)
+            AppLog.e(TAG, "startSshd[$userlandId] failed", e)
             false
         }
     }
@@ -376,7 +376,7 @@ class LinuxSessionService : Service() {
                 false
             }
             if (!alive) {
-                Log.w(TAG, "startSshd[$userlandId]: pid=$pid died before the port ever came up " +
+                AppLog.w(TAG, "startSshd[$userlandId]: pid=$pid died before the port ever came up " +
                     "— see /tmp/lobishell-sshd-setup.log inside the rootfs for why (apt-get " +
                     "install of openssh-server likely failed, or its config was rejected)")
                 sshdSessions.remove(userlandId)?.let { openSessions.remove(it); demoteFromForegroundIfIdle() }
@@ -387,7 +387,7 @@ class LinuxSessionService : Service() {
     private fun stopSshdInternal(userlandId: String): Boolean {
         val session = sshdSessions.remove(userlandId) ?: return false
         session.destroy()
-        Log.i(TAG, "stopSshd[$userlandId]: stopped")
+        AppLog.i(TAG, "stopSshd[$userlandId]: stopped")
         return true
     }
 
@@ -424,19 +424,19 @@ class LinuxSessionService : Service() {
                 false
             }
             if (alive) return true
-            Log.w(TAG, "startRunitSupervisor[$userlandId]: stale session, clearing")
+            AppLog.w(TAG, "startRunitSupervisor[$userlandId]: stale session, clearing")
             runitSessions.remove(userlandId)
             openSessions.remove(existing)
             demoteFromForegroundIfIdle()
         }
         if (!RootfsInstaller.isInstalled(this, userlandId)) {
-            Log.w(TAG, "startRunitSupervisor[$userlandId]: rootfs not installed yet")
+            AppLog.w(TAG, "startRunitSupervisor[$userlandId]: rootfs not installed yet")
             return false
         }
         return try {
             val hostPageSize = android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE)
             if (hostPageSize > 4096) {
-                Log.w(TAG, "startRunitSupervisor[$userlandId]: host uses ${hostPageSize / 1024} KB pages — proot/Ubuntu unsupported here")
+                AppLog.w(TAG, "startRunitSupervisor[$userlandId]: host uses ${hostPageSize / 1024} KB pages — proot/Ubuntu unsupported here")
                 return false
             }
             RootfsInstaller.configureRootfs(this, userlandId)
@@ -476,10 +476,10 @@ class LinuxSessionService : Service() {
             runitSessions[userlandId] = session
             openSessions.add(session)
             promoteToForeground()
-            Log.i(TAG, "startRunitSupervisor[$userlandId]: pid=${session.pidValue}")
+            AppLog.i(TAG, "startRunitSupervisor[$userlandId]: pid=${session.pidValue}")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "startRunitSupervisor[$userlandId] failed", e)
+            AppLog.e(TAG, "startRunitSupervisor[$userlandId] failed", e)
             false
         }
     }
@@ -487,7 +487,7 @@ class LinuxSessionService : Service() {
     private fun stopRunitSupervisorInternal(userlandId: String): Boolean {
         val session = runitSessions.remove(userlandId) ?: return false
         session.destroy()
-        Log.i(TAG, "stopRunitSupervisor[$userlandId]: stopped")
+        AppLog.i(TAG, "stopRunitSupervisor[$userlandId]: stopped")
         return true
     }
 
@@ -738,15 +738,15 @@ class LinuxSessionService : Service() {
             runCatching {
                 // Close the service's copy of masterFd.
                 ParcelFileDescriptor.adoptFd(masterFd).close()
-            }.onFailure { Log.w(TAG, "destroy: close masterFd=$masterFd failed", it) }
+            }.onFailure { AppLog.w(TAG, "destroy: close masterFd=$masterFd failed", it) }
 
             runCatching {
                 PtyLauncher.killProcess(pidValue)
-            }.onFailure { Log.w(TAG, "destroy: killProcess pid=$pidValue failed", it) }
+            }.onFailure { AppLog.w(TAG, "destroy: killProcess pid=$pidValue failed", it) }
 
             openSessions.remove(this)
             demoteFromForegroundIfIdle()
-            Log.i(TAG, "destroy: pid=$pidValue masterFd=$masterFd cleaned up")
+            AppLog.i(TAG, "destroy: pid=$pidValue masterFd=$masterFd cleaned up")
         }
 
         /** Called from onDestroy() without touching the session list (already being cleared). */

@@ -1,6 +1,6 @@
 package de.lobianco.saftssh.linux
 
-import android.util.Log
+import de.lobianco.saftssh.linux.data.logging.AppLog
 
 /**
  * Root-only alternative to the proot userland: a REAL `chroot` (with the host's /dev, /sys, /proc
@@ -129,13 +129,13 @@ object RootContainerSupport {
             val out = p.inputStream.bufferedReader().readText().trim()
             p.waitFor()
             val stillMounted = out.lineSequence().any { it.startsWith("STILL-MOUNTED:") }
-            if (out.isNotEmpty()) Log.w(TAG, "unmountSubmounts('$rootfs'):\n$out")
-            else Log.i(TAG, "unmountSubmounts('$rootfs'): all clear")
+            if (out.isNotEmpty()) AppLog.w(TAG, "unmountSubmounts('$rootfs'):\n$out")
+            else AppLog.i(TAG, "unmountSubmounts('$rootfs'): all clear")
             !stillMounted
         } catch (e: Exception) {
             // No root / no su — can't unmount OR verify. Assume unsafe (return false) so no root rm
             // runs; the app-uid deleteRecursively still runs safely regardless.
-            Log.w(TAG, "unmountSubmounts('$rootfs') failed: ${e.message}")
+            AppLog.w(TAG, "unmountSubmounts('$rootfs') failed: ${e.message}")
             false
         }
     }
@@ -178,9 +178,9 @@ object RootContainerSupport {
             }
             p.waitFor()
             val out = sb.toString().trim()
-            if (out.isNotEmpty()) Log.w(TAG, "forceRemove('$path'): $out")
+            if (out.isNotEmpty()) AppLog.w(TAG, "forceRemove('$path'): $out")
         } catch (e: Exception) {
-            Log.w(TAG, "forceRemove('$path') failed: ${e.message}")
+            AppLog.w(TAG, "forceRemove('$path') failed: ${e.message}")
         }
     }
 

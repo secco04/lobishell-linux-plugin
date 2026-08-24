@@ -3,7 +3,7 @@ package de.lobianco.saftssh.linux
 import android.content.Context
 import android.os.Build
 import android.system.Os
-import android.util.Log
+import de.lobianco.saftssh.linux.data.logging.AppLog
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.tukaani.xz.XZInputStream
@@ -96,7 +96,7 @@ object RootfsInstaller {
         if (dir.exists() && BuildConfig.SUPPORTS_ROOT_CONTAINERS && mountsClear) {
             RootContainerSupport.forceRemoveBlocking(dir.absolutePath)
         }
-        Log.i(TAG, "Cleared userland '$id' — freed $freed bytes")
+        AppLog.i(TAG, "Cleared userland '$id' — freed $freed bytes")
         return freed
     }
 
@@ -143,10 +143,10 @@ object RootfsInstaller {
      */
     fun install(context: Context, id: String, progress: (String) -> Unit = {}): Result<Unit> = runCatching {
         if (isInstalled(context, id)) {
-            Log.i(TAG, "Userland '$id' already installed — skipping")
+            AppLog.i(TAG, "Userland '$id' already installed — skipping")
             return@runCatching
         }
-        Log.i(TAG, "Installing userland '$id' (arch=${arch()})")
+        AppLog.i(TAG, "Installing userland '$id' (arch=${arch()})")
         progress("Setting up Linux userland (${ubuntuArch()})…")
 
         extractRootfs(context, id, progress)
@@ -155,10 +155,10 @@ object RootfsInstaller {
         tmpDir(context, id).mkdirs()
         archMarker(context, id).writeText(arch())
 
-        Log.i(TAG, "Userland '$id' ready: ${rootfsDir(context, id).absolutePath}")
+        AppLog.i(TAG, "Userland '$id' ready: ${rootfsDir(context, id).absolutePath}")
         progress("Userland ready.")
     }.onFailure {
-        Log.e(TAG, "Install failed for '$id': ${it.message}", it)
+        AppLog.e(TAG, "Install failed for '$id': ${it.message}", it)
         progress("Install failed: ${it.message}")
     }
 
@@ -229,7 +229,7 @@ object RootfsInstaller {
                 "shopt -s histappend\n" +
                 "export PROMPT_COMMAND=\"history -a\${PROMPT_COMMAND:+; \$PROMPT_COMMAND}\"\n"
             )
-        }.onFailure { Log.w(TAG, "configureRootfs('$id') failed: ${it.message}") }
+        }.onFailure { AppLog.w(TAG, "configureRootfs('$id') failed: ${it.message}") }
     }
 
     // ── Rootfs extraction ───────────────────────────────────────────────────
@@ -252,7 +252,7 @@ object RootfsInstaller {
                     XZInputStream(buffered)
                 n >= 2 && magic[0] == 0x1F.toByte() && magic[1] == 0x8B.toByte() ->
                     GzipCompressorInputStream(buffered)
-                else -> { Log.w(TAG, "Unrecognized compression magic — treating as raw tar"); buffered }
+                else -> { AppLog.w(TAG, "Unrecognized compression magic — treating as raw tar"); buffered }
             }
             decompressed.use { ds ->
                 TarArchiveInputStream(ds).use { tar ->
@@ -268,13 +268,13 @@ object RootfsInstaller {
                                 runCatching {
                                     if (target.exists() || isSymlink(target)) target.delete()
                                     Os.symlink(entry.linkName, target.absolutePath)
-                                }.onFailure { Log.w(TAG, "symlink ${target.path} -> ${entry.linkName}: ${it.message}") }
+                                }.onFailure { AppLog.w(TAG, "symlink ${target.path} -> ${entry.linkName}: ${it.message}") }
                             }
                             entry.isLink -> {
                                 target.parentFile?.mkdirs()
                                 val src = safeChild(staging, entry.linkName.removePrefix("./").removePrefix("/"))
                                 if (src.exists()) src.copyTo(target, overwrite = true)
-                                else Log.w(TAG, "Hard link source missing: ${entry.linkName} — skipping $name")
+                                else AppLog.w(TAG, "Hard link source missing: ${entry.linkName} — skipping $name")
                             }
                             else -> {
                                 target.parentFile?.mkdirs()
@@ -302,7 +302,7 @@ object RootfsInstaller {
             RootContainerSupport.forceRemoveBlocking(rootfs.absolutePath)
         }
         if (!staging.renameTo(rootfs)) error("Could not move staging → ${rootfs.absolutePath}")
-        Log.i(TAG, "Rootfs extracted to ${rootfs.absolutePath}")
+        AppLog.i(TAG, "Rootfs extracted to ${rootfs.absolutePath}")
     }
 
     /** Tarball stream: bundled asset if present, else the shared cached download (fetched once). */
@@ -323,11 +323,11 @@ object RootfsInstaller {
         val libDir = File(context.filesDir, "usr/lib").apply { mkdirs() }
         for (lib in listOf("libtalloc.so.2", "libandroid-shmem.so")) {
             if (File(libDir, lib).exists()) continue   // shared — install once
-            val res = tryOpenAsset(context, "$lib-$a") ?: run { Log.w(TAG, "Missing lib asset $lib-$a"); continue }
+            val res = tryOpenAsset(context, "$lib-$a") ?: run { AppLog.w(TAG, "Missing lib asset $lib-$a"); continue }
             val dest = File(libDir, lib)
             res.first.use { it.copyTo(dest.outputStream()) }
             dest.setReadable(true, false)
-            Log.i(TAG, "proot dependency installed: ${dest.absolutePath}")
+            AppLog.i(TAG, "proot dependency installed: ${dest.absolutePath}")
         }
     }
 

@@ -19,6 +19,7 @@
     </queries>
 
     <application
+        android:name=".LinuxPluginApplication"
         android:label="${pluginLabel}"
         android:allowBackup="false"
         android:supportsRtl="true"
@@ -55,6 +56,17 @@
                 <action android:name="de.lobianco.saftssh.linux.BIND_SESSION_SERVICE" />
             </intent-filter>
         </service>
+
+        <!-- Exposes filesDir/logs/*.log to the share sheet for "Submit Logs" (InfoActivity). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 
