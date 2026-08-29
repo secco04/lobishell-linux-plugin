@@ -2,4 +2,9 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Exposes only filesDir/logs/ — not the whole filesDir, which may hold other private data. -->
     <files-path name="logs" path="logs/" />
+    <!-- "Submit Logs" (InfoActivity) writes its anonymized copy here before sharing.
+         Scoped to the subdirectory, not the whole cache root: the main app narrowed its own
+         provider the same way (audit H4) so a FileProvider can never hand out a cache file that
+         merely happens to be there. -->
+    <cache-path name="shared_logs" path="shared_logs/" />
 </paths>

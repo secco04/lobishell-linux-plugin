@@ -134,7 +134,9 @@ class InfoActivity : Activity() {
                             .takeIf { it.exists() }?.readText(Charsets.UTF_8)
                             ?: "(no debug log found)"
                     )
-                    val cacheFile = java.io.File(cacheDir, "linux_plugin_debug.log").apply {
+                    // Subdirectory, not the cache root — file_paths.xml scopes the provider to it.
+                    val shareDir = java.io.File(cacheDir, "shared_logs").apply { mkdirs() }
+                    val cacheFile = java.io.File(shareDir, "linux_plugin_debug.log").apply {
                         writeText(anonymized, Charsets.UTF_8)
                     }
                     val uri = androidx.core.content.FileProvider.getUriForFile(
@@ -144,6 +146,7 @@ class InfoActivity : Activity() {
                         android.content.Intent.createChooser(
                             android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                 type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_EMAIL, arrayOf("feedback@lobishell.lobianco.de"))
                                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
                                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             },
