@@ -163,7 +163,26 @@ Java_de_lobianco_saftssh_linux_PtyLauncher_resizePty(
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * killProcess — SIGKILL the child
+ * killProcess — SIGKILL the child's whole process GROUP, not just the child
+ *
+ * forkpty() (via its internal login_tty()) calls setsid() on the child, making it a session
+ * leader with its own new process group whose pgid equals its own pid. Anything the shell
+ * launches inherits that same pgid unless it explicitly calls setsid()/setpgid() itself.
+ *
+ * Killing only the single tracked pid (the old behaviour) left every ordinary descendant of a
+ * program that forks-and-returns without detaching still running: a shell that starts a VNC
+ * server (vncserver-style wrapper scripts routinely fork the real Xvnc/x11vnc process and let
+ * the parent shell command return immediately) survived "stopping" the session, invisibly, with
+ * no tracked pid and no UI indication — reported as "VNC lief im Hintergrund ohne jegliches
+ * Zeichen, obwohl das Userland laut App definitiv gestoppt war".
+ *
+ * kill(-pid, SIG) targets the whole process group instead of one process (POSIX kill(2)) — safe
+ * here specifically because pid IS that group's pgid (forkpty made it the leader). This still
+ * cannot reach a process that properly double-forks and calls its own setsid() to fully detach
+ * into a brand-new session (classic Unix daemonization) — that process deliberately leaves this
+ * group and needs namespace/cgroup-level containment to catch, which is a larger change. This
+ * fixes the far more common case: a program that forks a worker but never bothers to detach it
+ * from the group it was born into.
  * ────────────────────────────────────────────────────────────────────────── */
 JNIEXPORT void JNICALL
 Java_de_lobianco_saftssh_linux_PtyLauncher_killProcess(
@@ -171,7 +190,12 @@ Java_de_lobianco_saftssh_linux_PtyLauncher_killProcess(
         jobject thiz,
         jint pid)
 {
-    kill((pid_t)pid, SIGKILL);
+    if (kill(-(pid_t)pid, SIGKILL) < 0 && errno == ESRCH) {
+        // No process group with that pgid (e.g. the child already reassigned its own group before
+        // dying, or this build's forkpty somehow didn't make it the leader) — fall back to the
+        // single-process kill so a legitimate, expected case never regresses into a silent no-op.
+        kill((pid_t)pid, SIGKILL);
+    }
 }
 
 /* ──────────────────────────────────────────────────────────────────────────

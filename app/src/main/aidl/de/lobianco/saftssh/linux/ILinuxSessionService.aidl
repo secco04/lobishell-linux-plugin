@@ -33,7 +33,7 @@ interface ILinuxSessionService {
      * plaintext password or the public-key contents, respectively. [port] must be >= 1024 (proot's
      * fake root does not grant real CAP_NET_BIND_SERVICE for privileged ports).
      */
-    boolean startSshd(String userlandId, int port, String authMode, String secret);
+    boolean startSshd(String userlandId, int port, String authMode, String secret, boolean rootChroot);
 
     /** Stops the persistent SSH server for userland [userlandId], if running. */
     boolean stopSshd(String userlandId);

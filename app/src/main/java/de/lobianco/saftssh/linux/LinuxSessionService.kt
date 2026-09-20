@@ -175,13 +175,14 @@ class LinuxSessionService : Service() {
             return RootfsInstaller.clear(this@LinuxSessionService, userlandId ?: "default")
         }
 
-        override fun startSshd(userlandId: String?, port: Int, authMode: String?, secret: String?): Boolean {
+        override fun startSshd(userlandId: String?, port: Int, authMode: String?, secret: String?, rootChroot: Boolean): Boolean {
             if (!isCallerAuthorized()) return false
             return this@LinuxSessionService.startSshdInternal(
                 userlandId?.takeIf { it.isNotBlank() } ?: "default",
                 port,
                 if (authMode == "pubkey") "pubkey" else "password",
-                secret ?: ""
+                secret ?: "",
+                rootChroot
             )
         }
 
@@ -279,7 +280,7 @@ class LinuxSessionService : Service() {
      *  invocation — separate `--kill-on-exit` scope from any interactive createSession() PTY, so
      *  starting/stopping it never affects a concurrently open interactive tab on the same
      *  userland, or vice versa. */
-    private fun startSshdInternal(userlandId: String, port: Int, authMode: String, secret: String): Boolean {
+    private fun startSshdInternal(userlandId: String, port: Int, authMode: String, secret: String, rootChroot: Boolean): Boolean {
         sshdSessions[userlandId]?.let { existing ->
             val alive = try {
                 android.system.Os.kill(existing.pidValue, 0)  // signal 0: existence check only
@@ -312,38 +313,81 @@ class LinuxSessionService : Service() {
             RootfsInstaller.configureRootfs(this, userlandId)
             val rootfs = RootfsInstaller.rootfsDir(this, userlandId).absolutePath
             val tmp    = RootfsInstaller.tmpDir(this, userlandId).apply { mkdirs() }.absolutePath
-            val libDir = File(filesDir, "usr/lib").absolutePath
-            val nativeLib = applicationInfo.nativeLibraryDir
-            val prootBin = "$nativeLib/libproot.so"
-            val loader   = "$nativeLib/libproot-loader.so"
 
-            val script = buildSshdSetupScript(port, authMode)
-            val args = arrayOf(
-                "proot",
-                "--kill-on-exit",
-                "--root-id",
-                "--link2symlink",
-                "-r", rootfs,
-                "-b", "/dev",
-                "-b", "/proc",
-                "-b", "/sys",
-                "-b", "$tmp:/tmp",
-                "-w", "/root",
-                "/usr/bin/env", "-i",
-                "HOME=/root",
-                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-                "TERM=xterm-256color",
-                "LANG=C.UTF-8",
-                "LOBISHELL_SSHD_SECRET=$secret",
-                "/bin/bash", "-c", script,
-            )
-            val env = arrayOf(
-                "PROOT_TMP_DIR=$tmp",
-                "PROOT_LOADER=$loader",
-                "LD_LIBRARY_PATH=$libDir:$nativeLib",
-            )
-            val result = PtyLauncher.forkAndExec(prootBin, args, env, 80, 24, "") ?: return false
-            val session = SessionImpl(result[0], result[1])
+            val session: SessionImpl
+            if (rootChroot) {
+                // Real chroot(2), mirroring buildSession()'s interactive root-chroot branch — see
+                // its own doc for the full reasoning. This is the fix for a confirmed on-device
+                // failure: an interactive root-chroot session creates SSH host keys / shadow
+                // entries as GENUINE root, and the previous code always launched sshd via proot
+                // regardless of this connection's root-chroot setting — proot's `--root-id` only
+                // fakes the UID reported to the traced process, it grants no real kernel privilege,
+                // so sshd hit a real "Permission denied" reading files a real-root process had
+                // written and died immediately. Confirmed live: the tracked pid ended up a zombie
+                // ("Z [libproot.so]"), nothing ever bound the configured port, and a same-LAN
+                // client's TCP connect got a flat refusal with nothing in logcat to explain why —
+                // this Boolean silently wasn't reaching this function at all (missing from the AIDL
+                // signature), so the setting had no effect no matter what the connection specified.
+                if (!BuildConfig.SUPPORTS_ROOT_CONTAINERS) {
+                    AppLog.w(TAG, "startSshd[$userlandId]: root chroot requested but this is the non-root plugin build")
+                    return false
+                }
+                if (!RootDetector.hasWorkingRootAccess()) {
+                    AppLog.w(TAG, "startSshd[$userlandId]: root chroot requested but no root access is available")
+                    return false
+                }
+                // The secret is folded into the script text as a local shell variable (single-
+                // quoted, with embedded quotes escaped) rather than passed as an env var: the
+                // chroot exec below runs under `/usr/bin/env -i`, which clears the whole
+                // environment except the handful of vars it explicitly lists — an env-var secret
+                // would simply vanish before the script ever saw it. A local variable assignment
+                // baked into the script itself has no such dependency on what survives env -i.
+                val secretQuoted = "'" + secret.replace("'", """'\''""") + "'"
+                val innerScript = "LOBISHELL_SSHD_SECRET=$secretQuoted; " + buildSshdSetupScript(port, authMode)
+                val fullScript = RootContainerSupport.buildRootChrootScript(rootfs, tmp, innerScript)
+                val result = PtyLauncher.forkAndExec(
+                    "/system/bin/sh",
+                    arrayOf("sh", "-c", "exec su -c \"\$LOBISHELL_ROOT_SCRIPT\""),
+                    arrayOf("TERM=xterm-256color", "LOBISHELL_ROOT_SCRIPT=$fullScript"),
+                    80, 24, ""
+                ) ?: return false
+                // rootChrootPath wired in so destroy()/stopSshd() also sweeps for anything sshd's
+                // own script forks off and daemonizes (same reasoning as the interactive session).
+                session = SessionImpl(result[0], result[1], rootChrootPath = rootfs)
+            } else {
+                val libDir = File(filesDir, "usr/lib").absolutePath
+                val nativeLib = applicationInfo.nativeLibraryDir
+                val prootBin = "$nativeLib/libproot.so"
+                val loader   = "$nativeLib/libproot-loader.so"
+
+                val script = buildSshdSetupScript(port, authMode)
+                val args = arrayOf(
+                    "proot",
+                    "--kill-on-exit",
+                    "--root-id",
+                    "--link2symlink",
+                    "-r", rootfs,
+                    "-b", "/dev",
+                    "-b", "/proc",
+                    "-b", "/sys",
+                    "-b", "$tmp:/tmp",
+                    "-w", "/root",
+                    "/usr/bin/env", "-i",
+                    "HOME=/root",
+                    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                    "TERM=xterm-256color",
+                    "LANG=C.UTF-8",
+                    "LOBISHELL_SSHD_SECRET=$secret",
+                    "/bin/bash", "-c", script,
+                )
+                val env = arrayOf(
+                    "PROOT_TMP_DIR=$tmp",
+                    "PROOT_LOADER=$loader",
+                    "LD_LIBRARY_PATH=$libDir:$nativeLib",
+                )
+                val result = PtyLauncher.forkAndExec(prootBin, args, env, 80, 24, "") ?: return false
+                session = SessionImpl(result[0], result[1])
+            }
             sshdSessions[userlandId] = session
             openSessions.add(session)
             promoteToForeground()
@@ -678,10 +722,55 @@ class LinuxSessionService : Service() {
 
         val result = PtyLauncher.forkAndExec(binary, args, env, cols, rows, linker)
             ?: error("forkAndExec returned null — forkpty() failed in native layer")
-        return SessionImpl(result[0], result[1])
+        return SessionImpl(result[0], result[1], rootChrootPath = if (rootChroot) RootfsInstaller.rootfsDir(this, userlandId).absolutePath else null)
     }
 
     // ── ILinuxSession implementation ───────────────────────────────────────
+
+    /**
+     * Kills every process on the WHOLE DEVICE whose `/proc/PID/root` resolves to exactly
+     * [rootfsPath] — the last-resort cleanup for a root-chroot session's descendants that escaped
+     * [PtyLauncher.killProcess]'s process-group SIGKILL by properly daemonizing (setsid()) inside
+     * the shell before the session was stopped. See SessionImpl.rootChrootPath's doc for the
+     * concrete case this fixes (a self-forked VNC server + desktop session surviving indefinitely,
+     * confirmed live on-device: a full XFCE session with 30+ processes still running well after
+     * the app reported the Linux session as stopped, reachable via VNC with zero indication
+     * anywhere that it was still there).
+     *
+     * SAFETY — why this cannot touch anything outside this one userland:
+     *  - [rootfsPath] is always `RootfsInstaller.rootfsDir(context, userlandId).absolutePath`, a
+     *    directory under this app's OWN private `filesDir`. No other process on the device — not
+     *    Android's own, not another app's — has any legitimate reason to be chroot(2)'d there, so
+     *    an exact match is unambiguous by construction, not merely "unlikely".
+     *  - The comparison is EXACT string equality against the target of `readlink`, never a prefix
+     *    or substring test — "$rootfsPath-something-else" or a parent/child directory does not
+     *    match.
+     *  - [rootfsPath] must be non-blank, or the sweep does not run at all — an accidentally empty
+     *    path must never be allowed to fall through into comparing against `readlink`'s own
+     *    possible empty/error output.
+     *  - PID 1 is always skipped explicitly, even though init could never actually chroot(2) into
+     *    a per-app directory — a pure belt-and-suspenders guard against ever sending it a signal.
+     *  - Every process not resolvable right now (already exited between `ls` and the check, or a
+     *    permission hiccup) is silently skipped — never treated as a match by default.
+     *  - Runs via the SAME `su -c` invocation style [RootDetector.hasWorkingRootAccess] already
+     *    uses elsewhere in this plugin, not a new escalation path.
+     */
+    private fun sweepKillUnderChrootRoot(rootfsPath: String) {
+        if (rootfsPath.isBlank()) return
+        val escaped = rootfsPath.replace("'", """'\''""")
+        val script = "for p in /proc/[0-9]*; do " +
+            "pid=\${p#/proc/}; " +
+            "[ \"\$pid\" = 1 ] && continue; " +
+            "r=\$(readlink \"\$p/root\" 2>/dev/null); " +
+            "[ -n \"\$r\" ] && [ \"\$r\" = '$escaped' ] && kill -9 \"\$pid\" 2>/dev/null; " +
+            "done; true"
+        runCatching {
+            val process = ProcessBuilder("su", "-c", script).redirectErrorStream(true).start()
+            val finished = process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            if (!finished) process.destroyForcibly()
+            AppLog.i(TAG, "sweepKillUnderChrootRoot: swept root=$rootfsPath finished=$finished")
+        }.onFailure { AppLog.w(TAG, "sweepKillUnderChrootRoot: su sweep failed for root=$rootfsPath", it) }
+    }
 
     private inner class SessionImpl(
         /** The PTY master fd held by the service for resize/kill. */
@@ -689,6 +778,15 @@ class LinuxSessionService : Service() {
         // Named `pidValue` (not `pid`) so it doesn't auto-generate getPid() and clash with the
         // explicit override fun getPid() below that satisfies the AIDL interface.
         val pidValue: Int,
+        /** Only set for the interactive root-chroot session (see buildSession) — used by destroy()
+         *  to additionally sweep for orphaned descendants that escaped [PtyLauncher.killProcess]'s
+         *  process-group kill by daemonizing themselves (e.g. a VNC server started from inside the
+         *  shell: vncserver-style wrapper scripts routinely double-fork + setsid() the real Xvnc/
+         *  desktop-session process specifically so it survives the shell that launched it — which
+         *  also means it survives OUR kill of that shell's process group). null/false for every
+         *  other session kind (sshd, runit, plain proot) — those aren't real chroot(2), so
+         *  /proc/PID/root can't be used to identify their descendants this way. */
+        val rootChrootPath: String? = null,
     ) : ILinuxSession.Stub() {
 
         override fun getPid(): Int = pidValue
@@ -744,6 +842,8 @@ class LinuxSessionService : Service() {
                 PtyLauncher.killProcess(pidValue)
             }.onFailure { AppLog.w(TAG, "destroy: killProcess pid=$pidValue failed", it) }
 
+            rootChrootPath?.let { sweepKillUnderChrootRoot(it) }
+
             openSessions.remove(this)
             demoteFromForegroundIfIdle()
             AppLog.i(TAG, "destroy: pid=$pidValue masterFd=$masterFd cleaned up")
@@ -755,6 +855,7 @@ class LinuxSessionService : Service() {
             destroyed = true
             runCatching { ParcelFileDescriptor.adoptFd(masterFd).close() }
             runCatching { PtyLauncher.killProcess(pidValue) }
+            rootChrootPath?.let { sweepKillUnderChrootRoot(it) }
         }
     }
 }
