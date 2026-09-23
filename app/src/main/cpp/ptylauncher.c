@@ -26,6 +26,7 @@
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
+#include <sys/prctl.h>
 #include <android/log.h>
 #include <errno.h>
 
@@ -93,6 +94,10 @@ Java_de_lobianco_saftssh_linux_PtyLauncher_forkAndExec(
     ws.ws_col = (unsigned short)cols;
     ws.ws_row = (unsigned short)rows;
 
+    // Captured before forking so the child (see below) can tell whether ITS parent — this plugin
+    // process — has already died by the time it gets scheduled (fork()/getppid() race, see there).
+    pid_t parentPidBeforeFork = getpid();
+
     int masterFd = -1;
     pid_t pid = forkpty(&masterFd, NULL, NULL, &ws);
 
@@ -107,7 +112,31 @@ Java_de_lobianco_saftssh_linux_PtyLauncher_forkAndExec(
     }
 
     if (pid == 0) {
-        // ── Child process ── (async-signal-safe only: just execve)
+        // ── Child process ── (async-signal-safe only: prctl + getppid + execve)
+        //
+        // Without this, force-closing (or crashing) the plugin process sends it SIGKILL directly —
+        // no Kotlin/Java code runs at all, so LinuxSessionService's killProcess()/destroy() cleanup
+        // never fires. forkpty() already made this child (and sshd/runit's own script chain after
+        // it) a session leader in a brand-new process group via setsid(), so it's fully independent
+        // of the app's process tree from the kernel's point of view — it becomes a plain orphan,
+        // reparented to init, and keeps running (and keeps LISTENing, for sshd) forever, regardless
+        // of whether the userland's files still exist. Confirmed on-device: force-close app + plugin
+        // + delete the userland, and sshd was still reachable.
+        //
+        // PR_SET_PDEATHSIG makes the kernel deliver SIGKILL to (this thread of) the child the moment
+        // its parent thread dies, for ANY reason including SIGKILL — exactly this scenario. It does
+        // NOT propagate to further descendants this process itself forks later (sshd forking a
+        // per-connection handler, e.g.) — that already-documented gap (see killProcess()'s doc) is
+        // narrower and needs cgroup/namespace containment to close fully; this fixes the reported
+        // case, which is the long-lived LISTENER process itself outliving the app.
+        prctl(PR_SET_PDEATHSIG, SIGKILL);
+        // Race: the parent may have died between fork() returning here and the prctl() call above
+        // actually taking effect, in which case no SIGKILL is coming. getppid() returning something
+        // other than the pid we captured before forking means exactly that (a dead parent's children
+        // are reparented, on Android as elsewhere) — self-terminate rather than run detached forever.
+        if (getppid() != parentPidBeforeFork) {
+            _exit(1);
+        }
         if (largv != NULL) {
             execve(linker, largv, envp);   // linker-exec
         } else {

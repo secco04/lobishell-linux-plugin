@@ -842,7 +842,15 @@ class LinuxSessionService : Service() {
                 PtyLauncher.killProcess(pidValue)
             }.onFailure { AppLog.w(TAG, "destroy: killProcess pid=$pidValue failed", it) }
 
-            rootChrootPath?.let { sweepKillUnderChrootRoot(it) }
+            // destroy() is a blocking (non-oneway) AIDL call — the caller's own thread (often the
+            // app's main thread, e.g. a tab-close button handler) blocks until this method
+            // returns. sweepKillUnderChrootRoot() shells out to `su -c ...` with up to a 5s
+            // waitFor(), which previously ran right here on this Binder thread and produced a
+            // real ~5s main-thread freeze/ANR on the caller side (observed 2026-09-20: closing a
+            // root-chroot Linux tab froze the whole app for ~5019ms). The sweep is best-effort
+            // orphan cleanup that doesn't need to finish before destroy() returns, so it's fired
+            // on its own thread instead.
+            rootChrootPath?.let { path -> Thread({ sweepKillUnderChrootRoot(path) }, "chroot-sweep").start() }
 
             openSessions.remove(this)
             demoteFromForegroundIfIdle()
@@ -855,7 +863,8 @@ class LinuxSessionService : Service() {
             destroyed = true
             runCatching { ParcelFileDescriptor.adoptFd(masterFd).close() }
             runCatching { PtyLauncher.killProcess(pidValue) }
-            rootChrootPath?.let { sweepKillUnderChrootRoot(it) }
+            // See destroy() above — must not block the caller's thread on `su`.
+            rootChrootPath?.let { path -> Thread({ sweepKillUnderChrootRoot(path) }, "chroot-sweep").start() }
         }
     }
 }
