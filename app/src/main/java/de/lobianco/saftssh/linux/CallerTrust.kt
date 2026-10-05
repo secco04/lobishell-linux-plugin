@@ -20,7 +20,7 @@ internal object CallerTrust {
     private const val TAG = "CallerTrust"
 
     /** LobiShell as distributed through Google Play — Play re-signs with its own app-signing key. */
-    private const val CERT_PLAY = LOBISHELL_PLAY_APP_SIGNING_SHA256_MISSING  // TODO(release): fill in, see PluginTrust in the main app
+    private const val CERT_PLAY = "86301e068561a7270adc56900a72853ca5dba06bc1ee995c07c05afa8c8c2c32"
 
     /** LobiShell built and signed locally with the developer's release (upload) key. */
     private const val CERT_RELEASE = "efb237f579dccfc8715982bc4518532601ff092e98d5b285c49d4c569229c478"
