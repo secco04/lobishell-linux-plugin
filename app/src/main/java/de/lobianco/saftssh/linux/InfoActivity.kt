@@ -16,6 +16,11 @@ import android.widget.Toast
 
 class InfoActivity : Activity() {
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        PluginPermissionRequest.onResult(this, requestCode, permissions, grantResults)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -24,11 +29,8 @@ class InfoActivity : Activity() {
         // notification (see LinuxSessionService.promoteToForeground) to actually be visible — the
         // service keeps its priority protection either way, this just controls whether the user
         // sees it.
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-        }
+        // Notifications + (Android 17+) local-network access — see PluginPermissionRequest.
+        if (PluginPermissionRequest.onCreate(this)) return
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

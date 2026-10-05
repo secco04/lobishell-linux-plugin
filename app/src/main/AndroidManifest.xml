@@ -4,6 +4,8 @@
     <!-- Needed by RootfsInstaller to download the Ubuntu rootfs on first connect, and by apt
          (run inside proot) to install packages afterwards. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 17+: required to reach hosts on the local network at all (runtime permission, asked in InfoActivity). -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <!-- Needed to keep the PTY session alive while both apps are backgrounded (see
          LinuxSessionService.startForeground) — without this the OS kills the plugin's process
