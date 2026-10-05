@@ -69,7 +69,8 @@ class LinuxSessionService : Service() {
     private fun isCallerAuthorized(): Boolean {
         val callingUid = Binder.getCallingUid()
         val callerPackages = packageManager.getPackagesForUid(callingUid) ?: arrayOf()
-        val authorized = callerPackages.any { it in ALLOWED_CALLER_PACKAGES }
+        // Name AND signing certificate: a package name alone can be taken by any app (see CallerTrust).
+        val authorized = callerPackages.any { it in ALLOWED_CALLER_PACKAGES && CallerTrust.isTrusted(this, callingUid, it) }
         if (!authorized) {
             AppLog.w(TAG, "Rejected call from unauthorized caller uid=$callingUid packages=${callerPackages.joinToString()}")
         }
